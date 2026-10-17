@@ -1,0 +1,10 @@
+#!/bin/sh
+# Make the directory for Balatro.love, so that an AFC tool can show it.
+mkdir -p /var/mobile/Media/Balatro4S
+chown mobile:mobile /var/mobile/Media/Balatro4S
+# Show the new icon on the home screen. uicache runs as the mobile user,
+# because SpringBoard reads the cache of that user.
+if [ -x /usr/bin/uicache ]; then
+    su mobile -c /usr/bin/uicache || /usr/bin/uicache
+fi
+exit 0

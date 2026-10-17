@@ -1,0 +1,7 @@
+#!/bin/sh
+# Remove the icon from the home screen. uicache runs as the mobile user,
+# because SpringBoard reads the cache of that user.
+if [ -x /usr/bin/uicache ]; then
+    su mobile -c /usr/bin/uicache || /usr/bin/uicache
+fi
+exit 0

@@ -22,7 +22,7 @@ static GLuint gIndexBuffer;
 static GLuint gVertexBuffer;
 static GLint gScreenUniform;
 static GLuint gCurrentTexture;
-static GLuint gWhite;
+static BOTexture gCircle;
 static int gDrawCalls;
 static int gLastDrawCalls;
 
@@ -106,9 +106,19 @@ int bo_gfx_init(void) {
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_DEPTH_TEST);
 
-    // A texture of one white texel, for the plain rectangles.
-    unsigned char white[4] = {255, 255, 255, 255};
-    gWhite = bo_gfx_texture(white, 1, 1).id;
+    // A white disc with a smooth edge, for the round corners. The plain
+    // rectangles use its solid centre, so that both share one texture.
+    enum { size = 64 };
+    static unsigned char disc[size * size * 4];
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            float dx = x + 0.5f - size / 2.0f, dy = y + 0.5f - size / 2.0f;
+            float edge = size / 2.0f - sqrtf(dx * dx + dy * dy);
+            unsigned char a = edge >= 1 ? 255 : edge <= 0 ? 0 : (unsigned char)(edge * 255);
+            memset(&disc[(y * size + x) * 4], a, 4);
+        }
+    }
+    gCircle = bo_gfx_texture(disc, size, size);
     return 1;
 }
 
@@ -178,7 +188,21 @@ void bo_gfx_sprite(const BOTexture *texture, float sx, float sy, float sw, float
 }
 
 void bo_gfx_rect(float x, float y, float w, float h, BOColor color) {
-    push(gWhite, 0, 0, 1, 1, x, y, w, h, 0, color);
+    push(gCircle.id, 0.5f, 0.5f, 0.5f, 0.5f, x, y, w, h, 0, color);
+}
+
+void bo_gfx_round_rect(float x, float y, float w, float h, float radius, BOColor color) {
+    if (radius * 2 > w) radius = w / 2;
+    if (radius * 2 > h) radius = h / 2;
+    float r = radius, half = gCircle.width / 2.0f;
+    // The four corners are the four quarters of the disc.
+    bo_gfx_sprite(&gCircle, 0, 0, half, half, x, y, r, r, 0, color);
+    bo_gfx_sprite(&gCircle, half, 0, half, half, x + w - r, y, r, r, 0, color);
+    bo_gfx_sprite(&gCircle, 0, half, half, half, x, y + h - r, r, r, 0, color);
+    bo_gfx_sprite(&gCircle, half, half, half, half, x + w - r, y + h - r, r, r, 0, color);
+    bo_gfx_rect(x + r, y, w - r * 2, h, color);
+    bo_gfx_rect(x, y + r, r, h - r * 2, color);
+    bo_gfx_rect(x + w - r, y + r, r, h - r * 2, color);
 }
 
 int bo_gfx_draw_calls(void) {

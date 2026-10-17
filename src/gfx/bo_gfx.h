@@ -32,6 +32,9 @@ void bo_gfx_sprite(const BOTexture *texture, float sx, float sy, float sw, float
 // Fills a rectangle with one colour.
 void bo_gfx_rect(float x, float y, float w, float h, BOColor color);
 
+// Fills a rectangle with round corners of radius pixels.
+void bo_gfx_round_rect(float x, float y, float w, float h, float radius, BOColor color);
+
 // Sends the sprites that wait in the batch to the GPU.
 void bo_gfx_flush(void);
 

@@ -5,7 +5,7 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
 
 ## What the app is
 
-- **balatrOS6 is a demake of Balatro for the iPhone 4S on iOS 6.1.3**
+- **Balatro4S is a demake of Balatro for the iPhone 4S on iOS 6.1.3**
   (jailbroken). It is a native app, installed as a .deb package.
 - **The rules are a native rewrite.** The game logic is new C code. The
   renderer is OpenGL ES 2.0. The app does not run the Lua code of the
@@ -25,7 +25,7 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
   Balatro belong to their owners.
 - **The app reads the assets from the Balatro.love of the owner of the
   phone.** The owner copies `Balatro.love` from a bought copy of Balatro to
-  `/var/mobile/Media/balatrOS6/Balatro.love`. AFC tools and `scp` reach
+  `/var/mobile/Media/Balatro4S/Balatro.love`. AFC tools and `scp` reach
   this directory. At the first start, the app unpacks the file into its
   cache. Reason: the .deb then holds no file of Balatro, so it can go to
   GitHub and to the Cydia repository like the other 4S apps. This is a
@@ -42,7 +42,7 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
 
 ## Identity
 
-- Bundle ID `io.github.stivengjekaj.balatros6`, display name `balatrOS6`.
+- Bundle ID `io.github.stivengjekaj.balatro4s`, display name `Balatro4S`.
 - iPhone only. iOS 6.0 or later. Landscape only. Reason: Balatro is a
   landscape game. The screen of the 4S is 480 x 320 points (960 x 640
   pixels).

@@ -1,0 +1,6 @@
+sdks/
+*.o
+.DS_Store
+
+# Build output
+build/

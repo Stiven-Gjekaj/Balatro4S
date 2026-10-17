@@ -169,3 +169,13 @@ BO_TEST(test_hand_has_the_base_values_of_balatro) {
     BO_EQUAL_INT(bo_hand_base(BO_HAND_FLUSH_FIVE)->mult, 16);
     BO_EXPECT(bo_hand_base(BO_HAND_NONE) == NULL);
 }
+
+BO_TEST(test_hand_levels_add_chips_and_mult_with_limits) {
+    BO_EQUAL_INT(bo_hand_level_chips(BO_HAND_PAIR, 1), 10);
+    BO_EQUAL_INT(bo_hand_level_mult(BO_HAND_PAIR, 1), 2);
+    BO_EQUAL_INT(bo_hand_level_chips(BO_HAND_PAIR, 3), 40);
+    BO_EQUAL_INT(bo_hand_level_mult(BO_HAND_PAIR, 3), 4);
+    // The Arm lowers a level. A level of 0 keeps the mult at 1 or more.
+    BO_EQUAL_INT(bo_hand_level_chips(BO_HAND_HIGH_CARD, 0), 0);
+    BO_EQUAL_INT(bo_hand_level_mult(BO_HAND_HIGH_CARD, 0), 1);
+}

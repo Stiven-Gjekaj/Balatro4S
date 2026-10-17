@@ -70,4 +70,9 @@ typedef struct {
 // The base values of each hand at level 1, from game.lua.
 const BOHandBase *bo_hand_base(BOHandType type);
 
+// The chips and the mult of a hand at a level, as level_up_hand gives them.
+// The chips are at least 0, and the mult is at least 1.
+int bo_hand_level_chips(BOHandType type, int level);
+int bo_hand_level_mult(BOHandType type, int level);
+
 #endif

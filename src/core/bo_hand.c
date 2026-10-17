@@ -27,6 +27,20 @@ const BOHandBase *bo_hand_base(BOHandType type) {
     return &kBase[type];
 }
 
+int bo_hand_level_chips(BOHandType type, int level) {
+    const BOHandBase *base = bo_hand_base(type);
+    if (!base) return 0;
+    int chips = base->chips + base->level_chips * (level - 1);
+    return chips < 0 ? 0 : chips;
+}
+
+int bo_hand_level_mult(BOHandType type, int level) {
+    const BOHandBase *base = bo_hand_base(type);
+    if (!base) return 0;
+    int mult = base->mult + base->level_mult * (level - 1);
+    return mult < 1 ? 1 : mult;
+}
+
 const char *bo_hand_name(BOHandType type, int royal) {
     if (type == BO_HAND_STRAIGHT_FLUSH && royal) return "Royal Flush";
     if (type < 0 || type >= BO_HAND_COUNT) return "";

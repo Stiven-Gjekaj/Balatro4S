@@ -4,15 +4,23 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #include "bo_game.h"
 
 static const char *kCommands = "/tmp/Balatro4S.cmd";
 static double gWait;
+static struct timespec gLastChange;
 
 void bo_debug_poll(double dt) {
     gWait -= dt;
     if (gWait > 0) return;
     gWait = 0.5;
+    // A file that root writes over SSH cannot be deleted by the app, which
+    // runs as mobile. So the app does a file only when its time changes.
+    struct stat info;
+    if (stat(kCommands, &info) != 0) return;
+    if (info.st_mtimespec.tv_sec == gLastChange.tv_sec && info.st_mtimespec.tv_nsec == gLastChange.tv_nsec) return;
+    gLastChange = info.st_mtimespec;
     FILE *file = fopen(kCommands, "r");
     if (!file) return;
     char line[256];

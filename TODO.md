@@ -9,7 +9,7 @@ The counts come from Balatro 1.0.1o: 150 jokers, 22 Tarot cards, 12 Planet
 cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 8 stakes, and 20 challenges.
 
-## 0.1: the foundation
+## 0.1: the foundation (done, 2026-10-18)
 
 - Add the app, install, and package scripts, and the Cydia packaging.
 - Read the textures and the font from `Balatro.love` on the phone.

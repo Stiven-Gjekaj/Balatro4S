@@ -61,3 +61,7 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
 - Each big part of the roadmap is one minor release. A release gets a git
   tag `vX.Y.Z`, a changelog entry, a GitHub release with the .deb, and an
   entry in the Cydia repository.
+- **An agent may make a full release with no review** (2026-10-18). When
+  a milestone is complete and its tests pass on the phone, the agent
+  pushes the commits, adds the tag, publishes the GitHub release with the
+  .deb, adds the .deb to the Cydia repository, and closes the issues.

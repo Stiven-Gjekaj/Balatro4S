@@ -88,6 +88,7 @@ int bo_pool_build(const BORun *run, int type, int rarity, BOCenterId *pool, int 
         }
         if (c->no_pool_flag && run->gros_michel_extinct) add = 0;
         if (c->yes_pool_flag && !run->gros_michel_extinct) add = 0;
+        if (run->banned[i]) add = 0;
         pool[count++] = add ? (BOCenterId)i : BO_CENTER_NONE;
         if (add) (*available)++;
     }
@@ -192,10 +193,14 @@ BOCenterId bo_pool_forced_soul(BORun *run, int type) {
 
 BOItem bo_run_create_item(BORun *run, int type, int rarity, int legendary, int soulable, BOCenterId forced,
                           const char *key_append, int in_shop) {
-    if (forced == BO_CENTER_NONE && soulable) forced = bo_pool_forced_soul(run, type);
+    // A banned c_soul stops the rolls of The Soul and Black Hole. A banned
+    // forced key does not count.
+    if (forced == BO_CENTER_NONE && soulable && !run->banned[BO_C_SOUL]) forced = bo_pool_forced_soul(run, type);
+    if (forced != BO_CENTER_NONE && run->banned[forced]) forced = BO_CENTER_NONE;
     BOCenterId center = forced != BO_CENTER_NONE ? forced : draw_from_pool(run, type, rarity, legendary, key_append);
     BOItem item = make_item(run, center);
     if (bo_center(center)->set == BO_SET_JOKER) {
+        if (run->all_eternal && bo_center(center)->eternal_compat) item.eternal = 1;
         if (in_shop) {
             char key[32];
             snprintf(key, sizeof(key), "%s%d", in_shop == 2 ? "packetper" : "etperpoll", run->ante);
@@ -305,7 +310,7 @@ BOCenterId bo_pool_next_tag(BORun *run, const char *append) {
 }
 
 BOCenterId bo_pool_get_pack(BORun *run, const char *key_base, const char *kind) {
-    if (!run->first_shop_buffoon) {
+    if (!run->first_shop_buffoon && !run->banned[BO_P_BUFFOON_NORMAL_1]) {
         run->first_shop_buffoon = 1;
         // The original takes p_buffoon_normal_1 or _2 with math.random. The
         // two packs differ only in their art.
@@ -314,7 +319,7 @@ BOCenterId bo_pool_get_pack(BORun *run, const char *key_base, const char *kind) 
     double cume = 0;
     for (int i = 0; i < BO_CENTER_COUNT; i++) {
         const BOCenterInfo *c = bo_center((BOCenterId)i);
-        if (c->set != BO_SET_BOOSTER) continue;
+        if (c->set != BO_SET_BOOSTER || run->banned[i]) continue;
         if (!kind || (c->kind && strcmp(kind, c->kind) == 0)) cume += c->weight ? c->weight : 1;
     }
     char key[48];
@@ -323,7 +328,7 @@ BOCenterId bo_pool_get_pack(BORun *run, const char *key_base, const char *kind) 
     double it = 0;
     for (int i = 0; i < BO_CENTER_COUNT; i++) {
         const BOCenterInfo *c = bo_center((BOCenterId)i);
-        if (c->set != BO_SET_BOOSTER) continue;
+        if (c->set != BO_SET_BOOSTER || run->banned[i]) continue;
         double weight = c->weight ? c->weight : 1;
         if (!kind || (c->kind && strcmp(kind, c->kind) == 0)) it += weight;
         if (it >= poll && it - weight <= poll) return (BOCenterId)i;

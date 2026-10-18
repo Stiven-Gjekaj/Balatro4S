@@ -356,9 +356,12 @@ void bo_eval_play(BORun *run, BOScore *score) {
                 if (e.playing_cards_created) bo_rules_playing_cards_added(run, 1);
             }
         }
-        score->chips = score->base_chips = bo_hand_level_chips(text, run->hands[text].level);
+        score->chips_cap = run->chips_dollar_cap;
+        score->cap_dollars = run->dollars;
+        score->chips = score->base_chips = bo_score_cap_chips(score, bo_hand_level_chips(text, run->hands[text].level));
         score->mult = score->base_mult = bo_hand_level_mult(text, run->hands[text].level);
         bo_eval_blind_modify_hand(run, score);
+        score->chips = bo_score_cap_chips(score, score->chips);
 
         for (int i = 0; i < scoringCount; i++) {
             score_played_card(run, score, scoring[i], scoringIndex[i], &base);
@@ -478,7 +481,7 @@ void bo_eval_blind_modify_hand(BORun *run, BOScore *score) {
 void bo_eval_deck_final_step(BORun *run, BOScore *score) {
     if (run->back != BO_B_PLASMA) return;
     double total = score->chips + score->mult;
-    score->chips = floor(total / 2);
+    score->chips = bo_score_cap_chips(score, floor(total / 2));
     score->mult = floor(total / 2);
     bo_score_add_event(score, BO_EVENT_BALANCED, BO_AREA_PLAY, 0, 0);
 }

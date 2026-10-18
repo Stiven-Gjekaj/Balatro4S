@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "bo_boss.h"
+#include "bo_challenge_data.h"
 #include "bo_consume.h"
 #include "bo_eval.h"
 #include "bo_joker.h"
@@ -47,12 +48,24 @@ int bo_run_spendable(const BORun *run) {
     return run->dollars - run->bankrupt_at;
 }
 
+// CardArea:update of the hand with minus_hand_size_per_X_dollar: the hand
+// is one card smaller for each X dollars.
+void bo_run_poll_hand_size(BORun *run) {
+    if (!run->minus_hand_size_per_x_dollar) return;
+    int steps = (int)floor((double)run->dollars / run->minus_hand_size_per_x_dollar);
+    if (steps != run->last_poll_size) {
+        bo_rules_change_hand_size(run, run->last_poll_size - steps);
+        run->last_poll_size = steps;
+    }
+}
+
 void bo_run_ease_dollars(BORun *run, int amount) {
     if (run->defer_dollars) {
         run->pending_dollars += amount;
     } else {
         run->dollars += amount;
         bo_profile_dollars(run, amount);
+        bo_run_poll_hand_size(run);
     }
 }
 
@@ -99,6 +112,10 @@ void bo_run_draw_cards(BORun *run, int count) {
     for (int i = 0; i < count && run->hand_count < BO_MAX_HAND; i++) {
         BOCard card = run->deck[--run->deck_count];
         card.face_down = (uint8_t)bo_boss_stay_flipped(run, &card);
+        // X-ray Vision: 1 in flipped_cards comes face down.
+        if (run->flipped_cards && bo_pseudorandom(&run->random, "flipped_card") < 1.0 / run->flipped_cards) {
+            card.face_down = 1;
+        }
         run->hand[run->hand_count++] = card;
         drawn++;
     }
@@ -262,7 +279,192 @@ void bo_run_start(BORun *run, const char *seed) {
     bo_run_start_deck(run, seed, BO_B_RED, 1);
 }
 
+// The protos of the cards of start_run, as {s, r, e, d, g}.
+typedef struct {
+    char s, r;
+    const char *e, *d, *g;
+} BOProto;
+
+static const char kRankLetters[13] = {'2', '3', '4', '5', '6', '7', '8', '9', 'A', 'J', 'K', 'Q', 'T'};
+static const char kSuitLetters[4] = {'C', 'D', 'H', 'S'};
+
+// The sort key of a proto: (s or '')..(r or '')..(e or '')..(d or '')..(g or '').
+static void proto_key(const BOProto *p, char *out, int size) {
+    snprintf(out, (size_t)size, "%c%c%s%s%s", p->s, p->r, p->e ? p->e : "", p->d ? p->d : "", p->g ? p->g : "");
+}
+
+static int rank_of_letter(char r) {
+    for (int i = 0; i < 13; i++) {
+        if (kRankLetters[i] == r) return kRankOrder[i];
+    }
+    return 2;
+}
+
+static int suit_of_letter(char s) {
+    for (int i = 0; i < 4; i++) {
+        if (kSuitLetters[i] == s) return kSuitOrder[i];
+    }
+    return BO_SPADES;
+}
+
+// card_from_control: a playing card from a proto.
+static BOCard card_from_proto(BORun *run, const BOProto *p) {
+    BOCard card = bo_card_make(rank_of_letter(p->r), (BOSuit)suit_of_letter(p->s));
+    card.uid = bo_run_new_sort_id(run);
+    if (p->e) {
+        BOCenterId center = bo_center_by_key(p->e);
+        for (int e = 0; e <= BO_ENH_LUCKY; e++) {
+            if (bo_rules_enhancement_center(e) == center) card.enhancement = (uint8_t)e;
+        }
+    }
+    if (p->d) {
+        static const char *editions[] = {"", "foil", "holo", "polychrome", "negative"};
+        for (int e = 1; e < 5; e++) {
+            if (strcmp(p->d, editions[e]) == 0) card.edition = (uint8_t)e;
+        }
+    }
+    if (p->g) {
+        static const char *seals[] = {"", "Gold", "Red", "Blue", "Purple"};
+        for (int g = 1; g < 5; g++) {
+            if (strcmp(p->g, seals[g]) == 0) card.seal = (uint8_t)g;
+        }
+    }
+    return card;
+}
+
+static int has_letter(const char *letters, char c) {
+    return letters && strchr(letters, c) != NULL;
+}
+
+// rules.custom of a challenge: the modifiers of start_run.
+static void apply_custom_rules(BORun *run, const BOChallengeInfo *ch) {
+    for (int i = 0; i < ch->custom_count; i++) {
+        const BOChallengeRule *r = &ch->custom[i];
+        if (strcmp(r->id, "no_reward") == 0) {
+            run->no_blind_reward |= 7;
+        } else if (strcmp(r->id, "no_reward_specific") == 0 && r->text) {
+            if (strcmp(r->text, "Small") == 0) run->no_blind_reward |= 1;
+            if (strcmp(r->text, "Big") == 0) run->no_blind_reward |= 2;
+            if (strcmp(r->text, "Boss") == 0) run->no_blind_reward |= 4;
+        } else if (strcmp(r->id, "no_extra_hand_money") == 0) {
+            run->no_extra_hand_money = 1;
+        } else if (strcmp(r->id, "no_interest") == 0) {
+            run->no_interest = 1;
+        } else if (strcmp(r->id, "chips_dollar_cap") == 0) {
+            run->chips_dollar_cap = 1;
+        } else if (strcmp(r->id, "all_eternal") == 0) {
+            run->all_eternal = 1;
+        } else if (strcmp(r->id, "debuff_played_cards") == 0) {
+            run->debuff_played_cards = 1;
+        } else if (strcmp(r->id, "inflation") == 0) {
+            run->inflation_rule = 1;
+        } else if (strcmp(r->id, "no_shop_jokers") == 0) {
+            run->joker_rate = 0;
+        } else if (strcmp(r->id, "flipped_cards") == 0) {
+            run->flipped_cards = (int)r->number;
+        } else if (strcmp(r->id, "minus_hand_size_per_X_dollar") == 0) {
+            run->minus_hand_size_per_x_dollar = (int)r->number;
+        } else if (strcmp(r->id, "set_eternal_ante") == 0) {
+            run->set_eternal_ante = (int)r->number;
+        } else if (strcmp(r->id, "set_joker_slots_ante") == 0) {
+            run->set_joker_slots_ante = (int)r->number;
+        } else if (strcmp(r->id, "discard_cost") == 0) {
+            run->discard_cost = (int)r->number;
+        }
+    }
+}
+
+void bo_run_apply_challenge_rules(BORun *run, int index) {
+    const BOChallengeInfo *ch = bo_challenge(index);
+    if (ch) apply_custom_rules(run, ch);
+}
+
+// The rules of args.challenge in start_run: the vouchers, the modifiers,
+// the custom rules, and the banned keys.
+static void apply_challenge(BORun *run, const BOChallengeInfo *ch, BOStartParams *p) {
+    for (int i = 0; i < ch->voucher_count; i++) {
+        BOCenterId v = bo_center_by_key(ch->vouchers[i]);
+        if (v != BO_CENTER_NONE) run->used_vouchers[v] = 1;
+    }
+    for (int i = 0; i < ch->modifier_count; i++) {
+        const BOChallengeRule *m = &ch->modifiers[i];
+        int value = (int)m->number;
+        if (strcmp(m->id, "dollars") == 0) p->dollars = value;
+        else if (strcmp(m->id, "discards") == 0) p->discards = value;
+        else if (strcmp(m->id, "hands") == 0) p->hands = value;
+        else if (strcmp(m->id, "hand_size") == 0) p->hand_size = value;
+        else if (strcmp(m->id, "joker_slots") == 0) p->joker_slots = value;
+        else if (strcmp(m->id, "consumable_slots") == 0) p->consumable_slots = value;
+        else if (strcmp(m->id, "reroll_cost") == 0) run->reroll_cost_base = run->reroll_cost = value;
+    }
+    apply_custom_rules(run, ch);
+    for (int i = 0; i < ch->banned_count; i++) {
+        BOCenterId c = bo_center_by_key(ch->banned[i]);
+        if (c != BO_CENTER_NONE) {
+            run->banned[c] = 1;
+            continue;
+        }
+        for (int b = 0; b < BO_BLIND_COUNT; b++) {
+            if (strcmp(bo_blind_info((BOBlindId)b)->key, ch->banned[i]) == 0) run->banned_blinds[b] = 1;
+        }
+    }
+}
+
+// The events of args.challenge after start_run: add_joker for each joker
+// and consumable, then Card.apply_to_run for each voucher.
+static void challenge_cards(BORun *run, const BOChallengeInfo *ch) {
+    for (int i = 0; i < ch->joker_count; i++) {
+        const BOChallengeCard *j = &ch->jokers[i];
+        BOCenterId center = bo_center_by_key(j->key);
+        if (center == BO_CENTER_NONE) continue;
+        BOItem item = bo_pool_make_item(run, center);
+        if (j->edition) {
+            static const char *editions[] = {"", "foil", "holo", "polychrome", "negative"};
+            for (int e = 1; e < 5; e++) {
+                if (strcmp(j->edition, editions[e]) == 0) item.edition = (uint8_t)e;
+            }
+        }
+        // set_eternal: only a joker that can be eternal.
+        if (j->eternal && bo_center(center)->eternal_compat) item.eternal = 1;
+        item.pinned = j->pinned;
+        if (bo_center(center)->consumeable) {
+            bo_run_add_consumable(run, &item);
+        } else {
+            bo_run_add_joker(run, &item);
+        }
+    }
+    for (int i = 0; i < ch->consumable_count; i++) {
+        BOCenterId center = bo_center_by_key(ch->consumables[i].key);
+        if (center == BO_CENTER_NONE) continue;
+        BOItem item = bo_pool_make_item(run, center);
+        bo_run_add_consumable(run, &item);
+    }
+    for (int i = 0; i < ch->voucher_count; i++) {
+        BOCenterId v = bo_center_by_key(ch->vouchers[i]);
+        if (v != BO_CENTER_NONE) bo_voucher_apply(run, v);
+    }
+}
+
+static void start_run(BORun *run, const char *seed, BOCenterId back, int stake, int challenge);
+
 void bo_run_start_deck(BORun *run, const char *seed, BOCenterId back, int stake) {
+    start_run(run, seed, back, stake, -1);
+}
+
+void bo_run_start_challenge(BORun *run, const char *seed, int index) {
+    const BOChallengeInfo *ch = bo_challenge(index);
+    BOCenterId back = BO_B_CHALLENGE;
+    if (ch && ch->deck_type) {
+        for (int i = 0; i < BO_CENTER_COUNT; i++) {
+            if (bo_center((BOCenterId)i)->set == BO_SET_BACK && strcmp(bo_center((BOCenterId)i)->name, ch->deck_type) == 0) {
+                back = (BOCenterId)i;
+            }
+        }
+    }
+    start_run(run, seed, back, 1, ch ? index : -1);
+}
+
+static void start_run(BORun *run, const char *seed, BOCenterId back, int stake, int challenge) {
     memset(run, 0, sizeof(*run));
     bo_random_start(&run->random, seed);
     run->back = back;
@@ -304,9 +506,16 @@ void bo_run_start_deck(BORun *run, const char *seed, BOCenterId back, int stake)
         run->hands[i].visible = !(i == BO_HAND_FLUSH_FIVE || i == BO_HAND_FLUSH_HOUSE || i == BO_HAND_FIVE_OF_A_KIND);
     }
     BOStartParams p = {4, 3, 4, 8, 5, 2, 0, 0};
-    // The Blue Stake and the stakes over it take one discard.
+    // The Red Stake and the stakes over it take the money of the Small
+    // Blind, and the Blue Stake takes one discard.
+    if (stake >= 2) run->no_blind_reward |= 1;
     if (stake >= 5) p.discards--;
     apply_back(run, &p);
+    const BOChallengeInfo *ch = challenge >= 0 ? bo_challenge(challenge) : NULL;
+    if (ch) {
+        run->challenge = challenge + 1;
+        apply_challenge(run, ch, &p);
+    }
     run->hands_per_round = p.hands;
     run->discards_per_round = p.discards;
     run->dollars = p.dollars;
@@ -316,40 +525,65 @@ void bo_run_start_deck(BORun *run, const char *seed, BOCenterId back, int stake)
 
     // The order of start_run: the boss, the voucher, the two tags, the deck,
     // the first shuffle, then the cards of the round.
-    run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, NULL);
+    run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, run->banned_blinds);
     run->voucher = bo_pool_next_voucher(run, 0);
     run->blind_tags[0] = bo_pool_next_tag(run, NULL);
     run->blind_tags[1] = bo_pool_next_tag(run, NULL);
-    // The protos of the cards, in the order of the keys of P_CARDS. The
-    // Erratic Deck takes a random key for each of the 52, then sorts them.
-    int protos[52], protoCount = 0;
-    for (int i = 0; i < 52; i++) {
-        int index = i;
-        if (p.erratic) index = bo_random_index(&run->random, bo_pseudoseed(&run->random, "erratic"), 52);
-        int rank = kRankOrder[index % 13];
-        if (p.no_faces && (rank == BO_JACK || rank == BO_QUEEN || rank == BO_KING)) continue;
-        protos[protoCount++] = index;
+    // The protos of the cards of start_run: the cards of the challenge, or
+    // the 52 keys of P_CARDS with the filters of the challenge. The Erratic
+    // Deck takes a random key for each of the 52. Then the protos sort as
+    // strings.
+    BOProto protos[BO_MAX_CARDS];
+    int protoCount = 0;
+    if (ch && ch->deck_card_count > 0) {
+        for (int i = 0; i < ch->deck_card_count && protoCount < BO_MAX_CARDS; i++) {
+            const BOChallengeDeckCard *dc = &ch->deck_cards[i];
+            BOProto proto = {dc->suit, dc->rank, dc->enhancement, dc->edition, dc->seal};
+            protos[protoCount++] = proto;
+        }
+    } else {
+        for (int i = 0; i < 52; i++) {
+            int index = i;
+            if (p.erratic) index = bo_random_index(&run->random, bo_pseudoseed(&run->random, "erratic"), 52);
+            BOProto proto = {kSuitLetters[index / 13], kRankLetters[index % 13], NULL, NULL, NULL};
+            int keep = 1;
+            if (ch) {
+                if (ch->yes_ranks && !has_letter(ch->yes_ranks, proto.r)) keep = 0;
+                if (ch->no_ranks && has_letter(ch->no_ranks, proto.r)) keep = 0;
+                if (ch->yes_suits && !has_letter(ch->yes_suits, proto.s)) keep = 0;
+                if (ch->no_suits && has_letter(ch->no_suits, proto.s)) keep = 0;
+                proto.e = ch->deck_enhancement;
+                proto.d = ch->deck_edition;
+                proto.g = ch->deck_gold_seal ? "Gold" : NULL;
+            }
+            if (p.no_faces && (proto.r == 'K' || proto.r == 'Q' || proto.r == 'J')) keep = 0;
+            if (keep) protos[protoCount++] = proto;
+        }
     }
+    char ka[48], kb[48];
     for (int i = 1; i < protoCount; i++) {
-        for (int j = i; j > 0 && protos[j - 1] > protos[j]; j--) {
-            int t = protos[j];
+        for (int j = i; j > 0; j--) {
+            proto_key(&protos[j - 1], ka, sizeof(ka));
+            proto_key(&protos[j], kb, sizeof(kb));
+            if (strcmp(ka, kb) <= 0) break;
+            BOProto t = protos[j];
             protos[j] = protos[j - 1];
             protos[j - 1] = t;
         }
     }
-    for (int i = 0; i < protoCount; i++) {
-        BOCard card = bo_card_make(kRankOrder[protos[i] % 13], (BOSuit)kSuitOrder[protos[i] / 13]);
-        card.uid = bo_run_new_sort_id(run);
-        run->deck[run->deck_count++] = card;
+    for (int i = 0; i < protoCount && run->deck_count < BO_MAX_CARDS; i++) {
+        run->deck[run->deck_count++] = card_from_proto(run, &protos[i]);
     }
     run->starting_deck_size = run->deck_count;
     run->hands_left = run->hands_per_round;
     run->discards_left = run->discards_per_round;
     shuffle_deck(run, "shuffle");
     reset_round_cards(run);
-    // The events of Back:apply_to_run come after start_run.
+    // The events of Back:apply_to_run and of the challenge come after
+    // start_run.
     back_consumables(run);
     if (run->back == BO_B_CHECKERED) checkered_suits(run);
+    if (ch) challenge_cards(run, ch);
     run->slot = BO_SLOT_SMALL;
     run->state = BO_STATE_BLIND_SELECT;
     bo_tag_orbital_choices(run);
@@ -408,7 +642,9 @@ void bo_run_select_blind(BORun *run) {
     for (int i = 0; i < run->hand_count; i++) run->hand[i].face_down = 0;
     for (int i = 0; i < run->deck_count; i++) run->deck[i].face_down = 0;
     // From stake 2 on, the Small Blind gives no reward.
-    if (run->stake >= 2 && run->slot == BO_SLOT_SMALL) run->blind_dollars = 0;
+    // modifiers.no_blind_reward: the stakes and the challenges.
+    int blindType = run->slot == BO_SLOT_SMALL ? 1 : run->slot == BO_SLOT_BIG ? 2 : 4;
+    if (run->no_blind_reward & blindType) run->blind_dollars = 0;
     run->chips = 0;
     run->round++;
     run->state = BO_STATE_SELECTING;
@@ -569,6 +805,15 @@ void bo_run_end_round(BORun *run) {
     for (int i = 0; i < run->hand_count; i++) run->discard[run->discard_count++] = run->hand[i];
     run->hand_count = 0;
     if (blind->boss) {
+        // Typecast: at this ante the jokers become eternal and the joker
+        // slots become 0.
+        if (run->set_eternal_ante && run->ante == run->set_eternal_ante) {
+            for (int i = 0; i < run->joker_count; i++) {
+                BOItem *j = &run->jokers[i];
+                if (bo_item_center(j)->eternal_compat && !j->perishable) j->eternal = 1;
+            }
+        }
+        if (run->set_joker_slots_ante && run->ante == run->set_joker_slots_ante) run->joker_slots = 0;
         run->ante++;
         bo_profile_high_score(BO_HIGH_FURTHEST_ANTE, run->ante);
         BOUnlockArgs ante = {.type = BO_UNLOCK_ANTE_UP, .ante = run->ante};
@@ -594,7 +839,7 @@ void bo_run_end_round(BORun *run) {
     memset(&run->eval, 0, sizeof(run->eval));
     // Mr. Bones saved the run: the blind gives no money.
     add_eval_row(run, BO_EVAL_BLIND, 0, 0, run->chips >= run->blind_chips ? run->blind_dollars : 0);
-    if (run->hands_left > 0) {
+    if (run->hands_left > 0 && !run->no_extra_hand_money) {
         add_eval_row(run, BO_EVAL_HANDS, 0, run->hands_left, run->hands_left * run->money_per_hand);
     }
     if (run->discards_left > 0 && run->money_per_discard) {
@@ -640,6 +885,12 @@ int bo_run_play(BORun *run, uint64_t mask, BOScore *score) {
     bo_boss_press_play(run);
     bo_eval_play(run, score);
     bo_profile_play(run, run->play, run->play_count, score->type, score->total);
+    // Double or Nothing: the scoring cards stay debuffed.
+    if (run->debuff_played_cards) {
+        for (int i = 0; i < run->play_count; i++) {
+            if ((score->scoring >> i) & 1) run->play[i].perma_debuff = run->play[i].debuffed = 1;
+        }
+    }
     // draw_from_play_to_discard: the destroyed cards leave the game.
     for (int i = 0; i < run->play_count; i++) {
         BOCard *card = &run->play[i];
@@ -725,6 +976,7 @@ void bo_run_discard_cards(BORun *run, uint64_t mask, int hook) {
     }
     bo_run_remove_marked_jokers(run);
     if (!hook) {
+        if (run->discard_cost) bo_run_ease_dollars(run, -run->discard_cost);
         bo_rules_ease_discard(run, -1);
         run->discards_used++;
     }
@@ -753,6 +1005,7 @@ void bo_run_cash_out(BORun *run) {
     if (run->hands_left < 1) run->hands_left = 1;
     run->dollars += run->eval.total;
     bo_profile_dollars(run, run->eval.total);
+    bo_run_poll_hand_size(run);
     bo_profile_stat(run, BO_STAT_ROUNDS, 1);
     run->chips = 0;
     run->shop_free = 0;
@@ -763,7 +1016,7 @@ void bo_run_cash_out(BORun *run) {
         bo_profile_discover(run, run->blind_tags[0]);
         bo_profile_discover(run, run->blind_tags[1]);
         run->slot = BO_SLOT_SMALL;
-        run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, NULL);
+        run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, run->banned_blinds);
         run->boss_rerolled = 0;
         run->skipped_slots = 0;
     } else {
@@ -864,6 +1117,10 @@ int bo_run_buy(BORun *run, int index) {
         bo_joker_calculate(run, &run->jokers[i], &ctx);
     }
     if (item.cost != 0) bo_run_ease_dollars(run, -item.cost);
+    if (run->inflation_rule) {
+        run->inflation++;
+        bo_run_reprice(run);
+    }
     bo_profile_stat(run, BO_STAT_SHOP_DOLLARS_SPENT, item.cost);
     if (bought.is_playing_card) bo_profile_stat(run, BO_STAT_PLAYING_CARDS_BOUGHT, 1);
     else if (c->set == BO_SET_PLANET) bo_profile_stat(run, BO_STAT_PLANETS_BOUGHT, 1);
@@ -933,7 +1190,12 @@ int bo_run_open_pack(BORun *run, int index) {
     run->shop_pack_count--;
     bo_run_forget_card(run, pack.center);
     bo_profile_discover(run, pack.center);
-    return bo_pack_open(run, pack.center, pack.cost);
+    int opened = bo_pack_open(run, pack.center, pack.cost);
+    if (opened && run->inflation_rule) {
+        run->inflation++;
+        bo_run_reprice(run);
+    }
+    return opened;
 }
 
 int bo_run_can_use_consumable(const BORun *run, int index, uint64_t highlighted) {
@@ -987,6 +1249,17 @@ void bo_run_move_joker(BORun *run, int from, int to) {
         memmove(&run->jokers[to + 1], &run->jokers[to], sizeof(BOItem) * (from - to));
     }
     run->jokers[to] = moved;
+}
+
+void bo_run_reprice(BORun *run) {
+    for (int i = 0; i < run->joker_count; i++) bo_rules_set_cost(run, &run->jokers[i]);
+    for (int i = 0; i < run->consumable_count; i++) bo_rules_set_cost(run, &run->consumables[i]);
+    for (int i = 0; i < run->shop_count; i++) {
+        if (!run->shop[i].is_playing_card) bo_rules_set_cost(run, &run->shop[i].item);
+    }
+    for (int i = 0; i < run->shop_pack_count; i++) bo_rules_set_cost(run, &run->shop_packs[i]);
+    if (run->has_shop_voucher) bo_rules_set_cost(run, &run->shop_voucher);
+    for (int i = 0; i < run->tag_voucher_count; i++) bo_rules_set_cost(run, &run->tag_vouchers[i]);
 }
 
 void bo_run_add_joker(BORun *run, const BOItem *item) {

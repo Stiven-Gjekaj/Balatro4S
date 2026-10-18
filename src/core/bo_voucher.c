@@ -91,6 +91,10 @@ static void redeem_item(BORun *run, BOItem voucher) {
     run->used_vouchers[voucher.center] = 1;
     bo_run_ease_dollars(run, -voucher.cost);
     bo_voucher_apply(run, voucher.center);
+    if (run->inflation_rule) {
+        run->inflation++;
+        bo_run_reprice(run);
+    }
     bo_profile_discover(run, voucher.center);
     bo_profile_stat(run, BO_STAT_SHOP_DOLLARS_SPENT, voucher.cost);
     bo_profile_stat(run, BO_STAT_VOUCHERS_BOUGHT, 1);
@@ -145,6 +149,6 @@ int bo_voucher_reroll_boss(BORun *run) {
     if (!bo_voucher_can_reroll_boss(run)) return 0;
     run->boss_rerolled = 1;
     bo_run_ease_dollars(run, -10);
-    run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, NULL);
+    run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, run->banned_blinds);
     return 1;
 }

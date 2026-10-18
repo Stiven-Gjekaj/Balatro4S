@@ -140,7 +140,7 @@ int bo_tag_new_blind_choice(BORun *run) {
         }
         // G.FUNCS.reroll_boss from the tag: free, then the next tag.
         run->boss_rerolled = 1;
-        run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, NULL);
+        run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, run->banned_blinds);
         bo_tag_new_blind_choice(run);
         return 1;
     }

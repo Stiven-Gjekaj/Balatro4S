@@ -49,7 +49,8 @@ void bo_boss_debuff_card(BORun *run, BOCard *card) {
             return;
         }
     }
-    card->debuffed = 0;
+    // Card:update keeps a perma_debuff card debuffed.
+    card->debuffed = card->perma_debuff;
 }
 
 // Blind:debuff_card for a joker: Crimson Heart keeps its debuff, and each

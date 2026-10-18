@@ -69,6 +69,7 @@ typedef struct {
     uint8_t played_this_ante;  // For The Pillar.
     uint8_t forced_selection;  // Cerulean Bell.
     uint16_t times_played;     // base.times_played: the plays of the card in this run.
+    uint8_t perma_debuff;      // Double or Nothing: the card stays debuffed.
 } BOCard;
 
 BOCard bo_card_make(int rank, BOSuit suit);

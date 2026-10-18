@@ -87,6 +87,23 @@ typedef struct BORun {
     BOCenterId back;       // The deck, as BO_B_RED.
     double ante_scaling;   // starting_params.ante_scaling: 2 for the Plasma Deck.
     int max_jokers;        // The most jokers at one time in this run.
+    // A challenge: its index from 1, or 0. Its custom rules follow, as
+    // G.GAME.modifiers.
+    int challenge;
+    uint8_t no_blind_reward;       // A bit for each blind with no money: 1 Small, 2 Big, 4 Boss.
+    uint8_t no_extra_hand_money;
+    uint8_t chips_dollar_cap;      // The chips are never more than the dollars.
+    uint8_t all_eternal;           // Each new joker is eternal.
+    uint8_t debuff_played_cards;   // A card that scores stays debuffed.
+    uint8_t inflation_rule;        // Each purchase makes all prices $1 higher.
+    int flipped_cards;             // 1 in this many drawn cards comes face down, or 0.
+    int minus_hand_size_per_x_dollar;
+    int last_poll_size;            // The hand size that the dollars took.
+    int set_eternal_ante;          // The ante where all jokers become eternal.
+    int set_joker_slots_ante;      // The ante where the joker slots become 0.
+    int discard_cost;              // The dollars of each discard.
+    uint8_t banned[BO_CENTER_COUNT];        // G.GAME.banned_keys of the cards and tags.
+    uint8_t banned_blinds[BO_BLIND_COUNT];  // The banned boss blinds.
     int current_boss_streak;  // The bosses in a row, for the high score.
     int no_interest;       // modifiers.no_interest: the Green Deck.
     int money_per_hand;    // modifiers.money_per_hand or 1.
@@ -230,6 +247,20 @@ void bo_run_start(BORun *run, const char *seed);
 // Starts a run with a deck (a center of the Back set) at a stake from 1 to
 // 8, as Game:start_run does.
 void bo_run_start_deck(BORun *run, const char *seed, BOCenterId back, int stake);
+
+// Starts a challenge, as Game:start_run with args.challenge. index is
+// from 0 to BO_CHALLENGE_COUNT - 1.
+void bo_run_start_challenge(BORun *run, const char *seed, int index);
+
+// The custom rules of a challenge in the middle of a run, for the tests.
+void bo_run_apply_challenge_rules(BORun *run, int index);
+
+// minus_hand_size_per_X_dollar: the hand size follows the dollars.
+void bo_run_poll_hand_size(BORun *run);
+
+// The jokers, the consumables, the shop, and the packs get their costs
+// again, as set_cost after the inflation of a purchase.
+void bo_run_reprice(BORun *run);
 
 // Back:apply_to_run in the middle of a run, for the tests: the modifiers,
 // the vouchers, and the consumables of the deck. The starting params do

@@ -49,6 +49,8 @@ typedef struct {
     double chips;
     double mult;
     double total;     // math.floor(chips * mult).
+    int chips_cap;    // Rich get Richer: the chips are never more than cap_dollars.
+    double cap_dollars;
     int dollars;
     int event_count;
     BOScoreEvent events[BO_MAX_EVENTS];
@@ -61,6 +63,9 @@ typedef struct {
 } BOScoreContext;
 
 void bo_score_context_init(BOScoreContext *context);
+
+// mod_chips: the chips, with the cap of Rich get Richer.
+double bo_score_cap_chips(const BOScore *score, double chips);
 
 // Adds an event and changes the chips, the mult, or the dollars of score.
 void bo_score_add_event(BOScore *score, BOEventKind kind, BOArea area, int index, double value);

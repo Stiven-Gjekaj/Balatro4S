@@ -209,3 +209,27 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
   card, its edition, its seal, and its shadow turn as one. The effect
   cache renders its slots upright, and the transform applies when the
   slot draws.
+
+## The decks, the stakes, the saves, and the profile
+
+- **The oracle runs the real `Game:start_run`** (0.8, 2026-10-18).
+  `tools/start.lua` replaces only the parts of the screen that start_run
+  calls, as the HUD and the background, with stubs. The deck, the vouchers,
+  the consumables, the Erratic cards, the stake, the boss, and the tags come
+  from the code of Balatro. `tools/fuzz.py --start` compares random seeds,
+  decks, and stakes. The test found a fault that every run had: the first
+  pick of the suit of Ancient Joker did not allow Spades.
+- **The round fuzz compares `evaluate_round` too.** After `end_round`, the
+  oracle runs the money of the round. This found two faults: the money of
+  two Investment Tags, and the blind money when Mr. Bones saves the run.
+- **A save is the bytes of `BORun` with a header.** `BORun` holds no
+  pointer, so the save writes it as it is. The header holds a fingerprint
+  of the layout. A save from a build with another layout does not load, and
+  the player starts a new run. The game writes the save when the run
+  changes and no animation is on, and removes it when the run is lost.
+- **The profile is an active pointer in the core.** The run calls it where
+  Balatro calls `inc_career_stat`, `discover_card`, and `check_for_unlock`.
+  With no active profile, as in the tests and the oracle, all cards are
+  unlocked and nothing is counted, so the fuzz results do not change.
+- **Unlock All is on the setup screen, with a second tap.** Balatro has it
+  in the profile menu. The demake has no profile menu yet.

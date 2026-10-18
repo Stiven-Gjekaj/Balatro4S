@@ -9,10 +9,15 @@
 #include "bo_blind.h"
 #include "bo_card.h"
 #include "bo_debug.h"
+#include "bo_describe.h"
 #include "bo_font.h"
 #include "bo_gfx.h"
 #include "bo_hand.h"
 #include "bo_image.h"
+#include "bo_joker.h"
+#include "bo_luatab.h"
+#include "bo_rich.h"
+#include "bo_rules.h"
 #include "bo_run.h"
 #include "bo_score.h"
 #include "bo_ui.h"
@@ -32,6 +37,7 @@ static const float kAtlasCardW = 142;
 #define BO_C_DARK 0x1e2b2d
 #define BO_C_MONEY 0xf3b958
 #define BO_C_WHITE 0xffffff
+#define BO_C_TEXT_DARK 0x4f6367
 
 // The ids of the widgets.
 enum {
@@ -43,8 +49,27 @@ enum {
     BO_ID_CASH_OUT,
     BO_ID_NEW_RUN,
     BO_ID_ENDLESS,
+    BO_ID_NEXT_ROUND,
+    BO_ID_REROLL,
+    BO_ID_ACTION,      // The button of the focused card: Buy or Sell.
+    BO_ID_BACKGROUND,  // A tap on nothing: the focus goes away.
     BO_ID_HAND_CARD = 100,
+    BO_ID_JOKER = 200,
+    BO_ID_CONSUMABLE = 300,
+    BO_ID_SHOP = 400,
+    BO_ID_VOUCHER = 450,
+    BO_ID_PACK = 460,
 };
+
+// The areas that a card can be in, for the focus.
+typedef enum {
+    BO_FOCUS_NONE,
+    BO_FOCUS_JOKER,
+    BO_FOCUS_CONSUMABLE,
+    BO_FOCUS_SHOP,
+    BO_FOCUS_VOUCHER,
+    BO_FOCUS_PACK,
+} BOFocusArea;
 
 typedef struct {
     BOCard card;
@@ -54,17 +79,25 @@ typedef struct {
     int selected;
 } BOCardView;
 
+// The place of a joker or a consumable on the screen. It follows its card
+// by the sort_id, so that a joker keeps its place when another one leaves.
 typedef struct {
-    char text[16];
+    uint32_t sort_id;
+    float x, y;
+    float pulse;
+} BOItemView;
+
+typedef struct {
+    char text[24];
     float x, y;
     float age;
     unsigned int color;
 } BOPopup;
 
 typedef enum {
-    BO_FLOW_IDLE,     // The screen follows the state of the run.
-    BO_FLOW_SCORE,    // The played cards score, one event at a time.
-    BO_FLOW_CLEAR,    // The played cards leave.
+    BO_FLOW_IDLE,   // The screen follows the state of the run.
+    BO_FLOW_SCORE,  // The played cards score, one event at a time.
+    BO_FLOW_CLEAR,  // The played cards leave.
 } BOFlow;
 
 static struct {
@@ -72,14 +105,23 @@ static struct {
     int width, height;
     float cardW, cardH;
     BOTexture deck;
-    BOTexture centers;
-    BOTexture chips;  // BlindChips.png: 21 frames for each blind.
+    BOTexture centers;   // Enhancers.png: fronts, backs, seals.
+    BOTexture chips;     // BlindChips.png: 21 frames for each blind.
+    BOTexture jokers;    // Jokers.png.
+    BOTexture tarots;    // Tarots.png: Tarot, Planet, and Spectral cards.
+    BOTexture vouchers;  // Vouchers.png.
+    BOTexture boosters;  // boosters.png.
+    BOLuaValue *text;    // localization/en-us.lua.
 
     BORun *run;
     BOCardView hand[BO_MAX_HAND];
     int handCount;
-    BOCardView play[BO_MAX_PLAY];
+    BOCardView play[BO_MAX_PLAY + 8];
     int playCount;
+    BOItemView jokerViews[BO_MAX_JOKERS];
+    int jokerViewCount;
+    BOItemView consumableViews[BO_MAX_CONSUMABLES];
+    int consumableViewCount;
 
     BOScore score;
     int nextEvent;
@@ -89,13 +131,21 @@ static struct {
     const char *shownHand;
     double shownRound;  // The round score on the screen. It counts up.
     double shownDollars;
-    BOPopup popups[16];
+    BOPopup popups[24];
     int endless;  // The player goes on after the win.
+
+    BOFocusArea focus;
+    int focusIndex;
+
+    // A drag of a joker.
+    int dragIndex;  // -1 when no joker is held.
+    int dragging;
+    float dragStartX, dragStartY, dragX;
 
     double time;
     int frames;
     double fpsTime;
-} G;
+} G = {.dragIndex = -1};
 
 static void fail(const char *message) {
     snprintf(G.error, sizeof(G.error), "%s", message);
@@ -116,7 +166,8 @@ static BOTexture load_texture(BOZip *zip, const char *name, float scale) {
     return texture;
 }
 
-// The areas of the screen.
+// --- The areas of the screen ---------------------------------------------
+
 static float panel_width(void) {
     return G.width * 0.25f;
 }
@@ -134,20 +185,35 @@ static BORect main_area(void) {
     return bo_rect(left, 0, deck_x() - G.width * 0.02f - left, G.height);
 }
 
-static void layout_row(BOCardView *cards, int count, BORect area, float y, float lift) {
+static BORect joker_area(void) {
+    float left = panel_width() + G.width * 0.02f;
+    return bo_rect(left, G.height * 0.02f, G.width * 0.72f - left, G.cardH);
+}
+
+static BORect consumable_area(void) {
+    BORect jokers = joker_area();
+    float left = jokers.x + jokers.w + G.width * 0.02f;
+    return bo_rect(left, jokers.y, G.width - G.width * 0.01f - left, G.cardH);
+}
+
+// The x of card i of count in an area, as CardArea:align_cards spreads them.
+static float slot_x(BORect area, int i, int count) {
     float step = count > 1 ? (area.w - G.cardW) / (count - 1) : 0;
     if (step > G.cardW * 1.05f) step = G.cardW * 1.05f;
     float total = step * (count - 1) + G.cardW;
-    float startX = area.x + (area.w - total) / 2;
+    return area.x + (area.w - total) / 2 + step * i;
+}
+
+static void layout_row(BOCardView *cards, int count, BORect area, float y, float lift) {
     for (int i = 0; i < count; i++) {
-        cards[i].tx = startX + step * i;
+        cards[i].tx = slot_x(area, i, count);
         cards[i].ty = y - (cards[i].selected ? lift : 0);
     }
 }
 
 static void layout(void) {
     layout_row(G.hand, G.handCount, main_area(), hand_top(), G.cardH * 0.2f);
-    if (G.flow != BO_FLOW_CLEAR) layout_row(G.play, G.playCount, main_area(), G.height * 0.28f, G.cardH * 0.12f);
+    if (G.flow != BO_FLOW_CLEAR) layout_row(G.play, G.playCount, main_area(), G.height * 0.30f, G.cardH * 0.12f);
 }
 
 // Makes the cards on the screen follow the hand of the run. A card that
@@ -175,8 +241,25 @@ static void sync_hand(void) {
     layout();
 }
 
+// Keeps a view for each joker and consumable, in the order of the run.
+static void sync_items(BOItemView *views, int *viewCount, const BOItem *items, int count, BORect area) {
+    BOItemView next[BO_MAX_JOKERS];
+    for (int i = 0; i < count && i < BO_MAX_JOKERS; i++) {
+        BOItemView view = {items[i].sort_id, slot_x(area, i, count), area.y, 0};
+        for (int j = 0; j < *viewCount; j++) {
+            if (views[j].sort_id == items[i].sort_id) {
+                view = views[j];
+                break;
+            }
+        }
+        next[i] = view;
+    }
+    memcpy(views, next, sizeof(BOItemView) * count);
+    *viewCount = count;
+}
+
 static void popup(const char *text, float x, float y, unsigned int color) {
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 24; i++) {
         if (G.popups[i].age <= 0 || G.popups[i].age > 1.2f) {
             snprintf(G.popups[i].text, sizeof(G.popups[i].text), "%s", text);
             G.popups[i].x = x;
@@ -196,11 +279,14 @@ static void new_run(void) {
     bo_run_start(G.run, seed);
     G.handCount = 0;
     G.playCount = 0;
+    G.jokerViewCount = 0;
+    G.consumableViewCount = 0;
     G.flow = BO_FLOW_IDLE;
     G.shownHand = NULL;
     G.shownRound = 0;
     G.shownDollars = G.run->dollars;
     G.endless = 0;
+    G.focus = BO_FOCUS_NONE;
     fprintf(stderr, "new run: seed %s\n", seed);
 }
 
@@ -233,20 +319,34 @@ int bo_game_start(const char *love_path, int width, int height) {
     G.deck = load_texture(zip, "resources/textures/2x/8BitDeck.png", scale);
     G.centers = load_texture(zip, "resources/textures/2x/Enhancers.png", scale);
     G.chips = load_texture(zip, "resources/textures/2x/BlindChips.png", 1);
+    G.jokers = load_texture(zip, "resources/textures/2x/Jokers.png", scale);
+    G.tarots = load_texture(zip, "resources/textures/2x/Tarots.png", scale);
+    G.vouchers = load_texture(zip, "resources/textures/2x/Vouchers.png", scale);
+    G.boosters = load_texture(zip, "resources/textures/2x/boosters.png", scale);
 
     size_t fontSize = 0;
     unsigned char *font = bo_zip_read(zip, "resources/fonts/m6x11plus.ttf", &fontSize);
     int fontLoaded = font && bo_font_load(font, fontSize, 48);
     free(font);
+
+    char *text = (char *)bo_zip_read(zip, "localization/en-us.lua", NULL);
+    if (text) {
+        G.text = bo_luatab_parse(text);
+        free(text);
+    }
+    bo_describe_set_text(G.text);
     bo_zip_close(zip);
-    if (!G.deck.id || !G.centers.id || !G.chips.id || !fontLoaded) {
+    if (!G.deck.id || !G.centers.id || !G.chips.id || !G.jokers.id || !fontLoaded) {
         fail("Balatro.love does not have the textures or the font that Balatro4S needs.");
         return 0;
     }
+    fprintf(stderr, "text: %s\n", G.text ? "loaded" : "missing");
     G.run = calloc(1, sizeof(BORun));
     new_run();
     return 1;
 }
+
+// --- The drawing of cards -------------------------------------------------
 
 // The row of each suit in 8BitDeck.png.
 static int deck_row(int suit) {
@@ -258,28 +358,91 @@ static int deck_row(int suit) {
     }
 }
 
-static void draw_card(const BOCardView *view) {
+static void draw_cell(const BOTexture *atlas, int columns, int rows, int col, int row, float x, float y, float w,
+                      float h, BOColor tint) {
+    if (!atlas->id || col < 0 || row < 0) return;
+    float cw = atlas->width / (float)columns, ch = atlas->height / (float)rows;
+    bo_gfx_sprite(atlas, cw * col, ch * row, cw, ch, x, y, w, h, 0, tint);
+}
+
+// The sprites that show an edition, until the shaders of 0.7: a colour
+// over the card.
+static void draw_edition(int edition, float x, float y, float w, float h) {
+    switch (edition) {
+    case BO_EDITION_FOIL: bo_gfx_round_rect(x, y, w, h, w * 0.06f, bo_rgba(0x9ad6ff, 0.28f)); break;
+    case BO_EDITION_HOLO: bo_gfx_round_rect(x, y, w, h, w * 0.06f, bo_rgba(0xff8ad2, 0.25f)); break;
+    case BO_EDITION_POLYCHROME: {
+        float t = (float)G.time;
+        BOColor c = {0.5f + 0.5f * sinf(t * 2), 0.5f + 0.5f * sinf(t * 2 + 2.1f), 0.5f + 0.5f * sinf(t * 2 + 4.2f), 0.28f};
+        bo_gfx_round_rect(x, y, w, h, w * 0.06f, c);
+        break;
+    }
+    case BO_EDITION_NEGATIVE: bo_gfx_round_rect(x, y, w, h, w * 0.06f, bo_rgba(0x2a1a5e, 0.45f)); break;
+    default: break;
+    }
+}
+
+static void draw_shadow(float x, float y, float w, float h) {
+    bo_gfx_round_rect(x + G.cardW * 0.04f, y + G.cardH * 0.04f, w, h, G.cardW * 0.06f, bo_rgba(0x000000, 0.25f));
+}
+
+static void draw_playing_card(const BOCard *card, float x, float y, float w, float h) {
+    draw_shadow(x, y, w, h);
+    const BOCenterInfo *center = bo_center(bo_rules_enhancement_center(card->enhancement));
+    BOColor white = bo_rgb(BO_C_WHITE);
+    draw_cell(&G.centers, 7, 5, center->pos_x, center->pos_y, x, y, w, h, white);
+    if (!bo_card_is_stone(card)) {
+        draw_cell(&G.deck, 13, 4, card->rank - 2, deck_row(card->suit), x, y, w, h, white);
+    }
+    // The seals of shared_seals in game.lua.
+    static const int sealPos[5][2] = {{-1, -1}, {2, 0}, {5, 4}, {6, 4}, {4, 4}};
+    if (card->seal) draw_cell(&G.centers, 7, 5, sealPos[card->seal][0], sealPos[card->seal][1], x, y, w, h, white);
+    draw_edition(card->edition, x, y, w, h);
+    if (card->debuffed) bo_gfx_round_rect(x, y, w, h, w * 0.06f, bo_rgba(0x000000, 0.45f));
+}
+
+static void draw_view(const BOCardView *view) {
     float grow = 1 + view->pulse * 0.12f;
     float w = G.cardW * grow, h = G.cardH * grow;
-    float x = view->x - (w - G.cardW) / 2, y = view->y - (h - G.cardH) / 2;
-    float cw = G.centers.width / 7.0f, ch = G.centers.height / 5.0f;
-    bo_gfx_round_rect(x + G.cardW * 0.04f, y + G.cardH * 0.04f, w, h, G.cardW * 0.06f, bo_rgba(0x000000, 0.25f));
-    // The front of a plain card is at (1, 0) in Enhancers.png.
-    bo_gfx_sprite(&G.centers, cw * 1, 0, cw, ch, x, y, w, h, 0, bo_rgb(BO_C_WHITE));
-    float dw = G.deck.width / 13.0f, dh = G.deck.height / 4.0f;
-    bo_gfx_sprite(&G.deck, dw * (view->card.rank - 2), dh * deck_row(view->card.suit), dw, dh, x, y, w, h, 0,
-                  bo_rgb(BO_C_WHITE));
+    draw_playing_card(&view->card, view->x - (w - G.cardW) / 2, view->y - (h - G.cardH) / 2, w, h);
+}
+
+static void draw_item(const BOItem *item, float x, float y, float w, float h) {
+    const BOCenterInfo *c = bo_item_center(item);
+    if (!c) return;
+    draw_shadow(x, y, w, h);
+    BOColor white = bo_rgb(BO_C_WHITE);
+    switch (c->set) {
+    case BO_SET_JOKER:
+        draw_cell(&G.jokers, 10, 16, c->pos_x, c->pos_y, x, y, w, h, white);
+        if (c->soul_x >= 0) draw_cell(&G.jokers, 10, 16, c->soul_x, c->soul_y, x, y - h * 0.02f, w, h, white);
+        break;
+    case BO_SET_TAROT:
+    case BO_SET_PLANET:
+    case BO_SET_SPECTRAL:
+        draw_cell(&G.tarots, 10, 6, c->pos_x, c->pos_y, x, y, w, h, white);
+        if (c->soul_x >= 0) draw_cell(&G.tarots, 10, 6, c->soul_x, c->soul_y, x, y, w, h, white);
+        break;
+    case BO_SET_VOUCHER: draw_cell(&G.vouchers, 9, 4, c->pos_x, c->pos_y, x, y, w, h, white); break;
+    case BO_SET_BOOSTER: draw_cell(&G.boosters, 4, 9, c->pos_x, c->pos_y, x, y, w, h, white); break;
+    default: break;
+    }
+    draw_edition(item->edition, x, y, w, h);
+    if (item->debuffed) bo_gfx_round_rect(x, y, w, h, w * 0.06f, bo_rgba(0x000000, 0.45f));
+    if (item->eternal || item->perishable || item->rental) {
+        const char *label = item->eternal ? "Eternal" : item->perishable ? "Perishable" : "Rental";
+        bo_font_draw(label, x + w / 2, y + h - h * 0.14f, h * 0.1f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    }
 }
 
 static void draw_deck(void) {
-    float cw = G.centers.width / 7.0f, ch = G.centers.height / 5.0f;
     float x = deck_x(), y = hand_top();
     int count = G.run->deck_count;
     // The Red Deck back is at (0, 0) in Enhancers.png. A few cards under it
     // show the height of the pile.
     int layers = count > 0 ? 1 + count / 13 : 0;
     for (int i = layers - 1; i >= 0; i--) {
-        bo_gfx_sprite(&G.centers, 0, 0, cw, ch, x - i * 2, y - i * 2, G.cardW, G.cardH, 0, bo_rgb(BO_C_WHITE));
+        draw_cell(&G.centers, 7, 5, 0, 0, x - i * 2, y - i * 2, G.cardW, G.cardH, bo_rgb(BO_C_WHITE));
     }
     // The run keeps each card in the deck, the hand, or the discard pile.
     int total = count + G.run->hand_count + G.run->discard_count;
@@ -308,6 +471,8 @@ static void draw_blind_chip(BOBlindId blind, float x, float y, float size) {
                   0, bo_rgb(BO_C_WHITE));
 }
 
+// --- The side panel -------------------------------------------------------
+
 static void draw_label_value(const char *label, const char *value, BORect r, unsigned int valueColor) {
     bo_ui_box(r, BO_C_DARK);
     bo_font_draw(label, r.x + r.w / 2, r.y + r.h * 0.08f, r.h * 0.3f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
@@ -323,11 +488,12 @@ static void draw_panel(void) {
     bo_gfx_rect(0, 0, panelW, G.height, bo_rgb(BO_C_BLACK));
     char text[48], value[32];
 
-    // The blind, or the title of the blind select.
+    // The blind, or the title of the blind select or the shop.
     BORect blindBox = bo_rect(pad, pad, inner, G.height * 0.2f);
-    if (run->state != BO_STATE_BLIND_SELECT || G.flow != BO_FLOW_IDLE) {
+    bo_ui_box(blindBox, BO_C_DARK);
+    if ((run->state == BO_STATE_SELECTING || run->state == BO_STATE_ROUND_EVAL || run->state == BO_STATE_GAME_OVER) ||
+        G.flow != BO_FLOW_IDLE) {
         const BOBlindInfo *info = bo_blind_info(run->blind);
-        bo_ui_box(blindBox, BO_C_DARK);
         BORect head = bo_rect(blindBox.x, blindBox.y, blindBox.w, blindBox.h * 0.3f);
         bo_ui_box(head, info->colour);
         bo_font_draw(info->name, head.x + head.w / 2, head.y + head.h * 0.15f, head.h * 0.7f, bo_rgb(BO_C_WHITE),
@@ -344,13 +510,11 @@ static void draw_panel(void) {
         bo_font_draw(text, tx, head.y + head.h + blindBox.h * 0.46f, blindBox.h * 0.12f, bo_rgb(BO_C_MONEY),
                      BO_ALIGN_LEFT);
     } else {
-        bo_ui_box(blindBox, BO_C_DARK);
-        const char *title = run->state == BO_STATE_BLIND_SELECT ? "Choose your" : "";
-        const char *title2 = run->state == BO_STATE_BLIND_SELECT ? "next Blind" : "";
-        bo_font_draw(title, panelW / 2, blindBox.y + blindBox.h * 0.22f, blindBox.h * 0.22f, bo_rgb(BO_C_WHITE),
-                     BO_ALIGN_CENTER);
-        bo_font_draw(title2, panelW / 2, blindBox.y + blindBox.h * 0.5f, blindBox.h * 0.22f, bo_rgb(BO_C_WHITE),
-                     BO_ALIGN_CENTER);
+        int shop = run->state == BO_STATE_SHOP;
+        bo_font_draw(shop ? "Improve" : "Choose your", panelW / 2, blindBox.y + blindBox.h * 0.22f,
+                     blindBox.h * 0.22f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+        bo_font_draw(shop ? "your run!" : "next Blind", panelW / 2, blindBox.y + blindBox.h * 0.5f, blindBox.h * 0.22f,
+                     bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
     }
 
     // The round score.
@@ -380,7 +544,13 @@ static void draw_panel(void) {
         format_number(G.shownChips, value, sizeof(value));
         bo_font_draw(value, pad * 2 + half - pad * 0.6f, rowY + rowH * 0.12f, rowH * 0.8f, bo_rgb(BO_C_WHITE),
                      BO_ALIGN_RIGHT);
-        format_number(G.shownMult, value, sizeof(value));
+        // The mult can have a part after the point, as 15.5.
+        double m = G.shownMult;
+        if (m == floor(m)) {
+            format_number(m, value, sizeof(value));
+        } else {
+            snprintf(value, sizeof(value), m >= 100 ? "%.0f" : m >= 10 ? "%.1f" : "%.2f", m);
+        }
         bo_font_draw(value, pad * 3 + half + pad * 0.6f, rowY + rowH * 0.12f, rowH * 0.8f, bo_rgb(BO_C_WHITE),
                      BO_ALIGN_LEFT);
     }
@@ -408,10 +578,130 @@ static void draw_panel(void) {
     snprintf(value, sizeof(value), "%d", run->round);
     draw_label_value("Round", value, bo_rect(pad * 2 + colW, y, colW, h), BO_C_ORANGE);
 
-    // The seed of the run, small at the bottom.
     snprintf(text, sizeof(text), "Seed %s", run->random.seed);
     bo_font_draw(text, panelW / 2, G.height * 0.9f, G.height * 0.035f, bo_rgb(BO_C_GREY), BO_ALIGN_CENTER);
 }
+
+// --- The jokers, the consumables, and the text of a card -----------------
+
+static void draw_items(void) {
+    BORun *run = G.run;
+    BORect jokers = joker_area(), consumables = consumable_area();
+    sync_items(G.jokerViews, &G.jokerViewCount, run->jokers, run->joker_count, jokers);
+    sync_items(G.consumableViews, &G.consumableViewCount, run->consumables, run->consumable_count, consumables);
+    char text[24];
+    snprintf(text, sizeof(text), "%d/%d", run->joker_count, run->joker_slots);
+    bo_font_draw(text, jokers.x, jokers.y + jokers.h + 2, G.height * 0.032f, bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
+    snprintf(text, sizeof(text), "%d/%d", run->consumable_count, run->consumable_slots);
+    bo_font_draw(text, consumables.x + consumables.w, consumables.y + consumables.h + 2, G.height * 0.032f,
+                 bo_rgb(BO_C_WHITE), BO_ALIGN_RIGHT);
+    for (int i = 0; i < run->consumable_count; i++) {
+        BOItemView *v = &G.consumableViews[i];
+        int focused = G.focus == BO_FOCUS_CONSUMABLE && G.focusIndex == i;
+        float y = v->y - (focused ? G.cardH * 0.12f : 0);
+        float grow = 1 + v->pulse * 0.12f;
+        draw_item(&run->consumables[i], v->x - G.cardW * (grow - 1) / 2, y - G.cardH * (grow - 1) / 2, G.cardW * grow,
+                  G.cardH * grow);
+        bo_ui_area(BO_ID_CONSUMABLE + i, bo_rect(v->x, y, G.cardW, G.cardH));
+    }
+    for (int i = 0; i < run->joker_count; i++) {
+        if (G.dragging && i == G.dragIndex) continue;
+        BOItemView *v = &G.jokerViews[i];
+        int focused = G.focus == BO_FOCUS_JOKER && G.focusIndex == i;
+        float y = v->y - (focused ? G.cardH * 0.12f : 0);
+        float grow = 1 + v->pulse * 0.12f;
+        draw_item(&run->jokers[i], v->x - G.cardW * (grow - 1) / 2, y - G.cardH * (grow - 1) / 2, G.cardW * grow,
+                  G.cardH * grow);
+        bo_ui_area(BO_ID_JOKER + i, bo_rect(v->x, y, G.cardW, G.cardH));
+    }
+    if (G.dragging && G.dragIndex >= 0 && G.dragIndex < run->joker_count) {
+        draw_item(&run->jokers[G.dragIndex], G.dragX - G.cardW / 2, jokers.y - G.cardH * 0.1f, G.cardW, G.cardH);
+    }
+}
+
+static const char *rarity_name(int rarity) {
+    static const char *names[] = {"", "Common", "Uncommon", "Rare", "Legendary"};
+    return rarity >= 1 && rarity <= 4 ? names[rarity] : "";
+}
+
+static unsigned int rarity_colour(int rarity) {
+    static const unsigned int colours[] = {0x708b91, 0x009dff, 0x4bc292, 0xfe5f55, 0xb26cbb};
+    return rarity >= 0 && rarity <= 4 ? colours[rarity] : 0x708b91;
+}
+
+static const char *set_name(int set) {
+    switch (set) {
+    case BO_SET_TAROT: return "Tarot";
+    case BO_SET_PLANET: return "Planet";
+    case BO_SET_SPECTRAL: return "Spectral";
+    case BO_SET_VOUCHER: return "Voucher";
+    case BO_SET_BOOSTER: return "Booster";
+    default: return "";
+    }
+}
+
+static unsigned int set_colour(int set) {
+    switch (set) {
+    case BO_SET_TAROT: return 0xa782d1;
+    case BO_SET_PLANET: return 0x13afce;
+    case BO_SET_SPECTRAL: return 0x4584fa;
+    case BO_SET_VOUCHER: return 0xfd682b;
+    case BO_SET_BOOSTER: return 0x646eb7;
+    default: return 0x708b91;
+    }
+}
+
+// The box with the name, the badge, and the text of a card, under or over
+// the card. action is the label of the button, or NULL. Returns 1 when the
+// button is tapped.
+static int draw_card_text(const BOItem *item, float cardX, float cardY, const char *action, unsigned int actionColour,
+                           int actionEnabled) {
+    BODescription d;
+    bo_describe_item(G.run, item, &d);
+    const BOCenterInfo *c = bo_item_center(item);
+    float line = G.height * 0.042f, pad = 10;
+    float w = G.width * 0.3f;
+    for (int i = 0; i < d.line_count; i++) {
+        float lw = bo_rich_width(d.lines[i], line) + pad * 4;
+        if (lw > w) w = lw;
+    }
+    float nameH = G.height * 0.06f, badgeH = G.height * 0.045f;
+    float h = pad * 2 + nameH + d.line_count * line * 1.15f + badgeH + pad * 2;
+    if (action) h += G.height * 0.08f;
+    float x = cardX + G.cardW / 2 - w / 2;
+    if (x < 4) x = 4;
+    if (x + w > G.width - 4) x = G.width - 4 - w;
+    float y = cardY + G.cardH + 8;
+    if (y + h > G.height - 4) y = cardY - h - 8;
+    if (y < 4) y = 4;
+    BORect box = bo_rect(x, y, w, h);
+    bo_gfx_round_rect(box.x + 3, box.y + 4, box.w, box.h, 10, bo_rgba(0x000000, 0.35f));
+    bo_ui_box(box, BO_C_L_BLACK);
+    bo_font_draw(d.name, x + w / 2, y + pad, nameH * 0.85f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    BORect body = bo_rect(x + pad, y + pad + nameH, w - pad * 2, d.line_count * line * 1.15f + pad);
+    bo_ui_box(body, BO_C_WHITE);
+    for (int i = 0; i < d.line_count; i++) {
+        bo_rich_draw(d.lines[i], x + w / 2, body.y + pad * 0.5f + i * line * 1.15f, line, bo_rgb(BO_C_TEXT_DARK),
+                     BO_ALIGN_CENTER);
+    }
+    // The badge: the rarity of a joker, or the set of another card.
+    const char *badge = c->set == BO_SET_JOKER ? rarity_name(c->rarity) : set_name(c->set);
+    unsigned int badgeColour = c->set == BO_SET_JOKER ? rarity_colour(c->rarity) : set_colour(c->set);
+    float by = body.y + body.h + pad * 0.6f;
+    BORect badgeBox = bo_rect(x + w * 0.25f, by, w * 0.5f, badgeH);
+    bo_ui_box(badgeBox, badgeColour);
+    bo_font_draw(badge, x + w / 2, by + badgeH * 0.12f, badgeH * 0.8f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    if (action) {
+        float bh = G.height * 0.07f;
+        BORect button = bo_rect(x + w * 0.2f, by + badgeH + pad * 0.6f, w * 0.6f, bh);
+        bo_ui_area(BO_ID_BACKGROUND + 1000, box);
+        return bo_ui_button(BO_ID_ACTION, button, actionColour, action, actionEnabled);
+    }
+    bo_ui_area(BO_ID_BACKGROUND + 1000, box);
+    return 0;
+}
+
+// --- The round -------------------------------------------------------------
 
 static uint64_t selected_mask(int *count) {
     uint64_t mask = 0;
@@ -437,10 +727,15 @@ static void update_preview(void) {
         G.shownHand = NULL;
         return;
     }
-    BOHandResult result = bo_hand_evaluate(cards, count, &G.run->context.rules);
+    BOHandRules rules;
+    memset(&rules, 0, sizeof(rules));
+    rules.four_fingers = bo_run_find_joker(G.run, BO_J_FOUR_FINGERS) > 0;
+    rules.shortcut = bo_run_find_joker(G.run, BO_J_SHORTCUT) > 0;
+    rules.smeared = bo_run_find_joker(G.run, BO_J_SMEARED) > 0;
+    BOHandResult result = bo_hand_evaluate(cards, count, &rules);
     G.shownHand = bo_hand_name(result.type, result.royal);
-    G.shownChips = bo_hand_level_chips(result.type, G.run->context.levels[result.type]);
-    G.shownMult = bo_hand_level_mult(result.type, G.run->context.levels[result.type]);
+    G.shownChips = bo_hand_level_chips(result.type, G.run->hands[result.type].level);
+    G.shownMult = bo_hand_level_mult(result.type, G.run->hands[result.type].level);
 }
 
 static void play_selected(void) {
@@ -464,7 +759,6 @@ static void play_selected(void) {
     G.shownMult = G.score.base_mult;
     // Balatro lifts the scoring cards of the played hand.
     for (int i = 0; i < n; i++) G.play[i].selected = (G.score.scoring >> i) & 1;
-    // The hand keeps only the cards that stay. New cards come after the score.
     BOCardView kept[BO_MAX_HAND];
     int keptCount = 0;
     for (int i = 0; i < G.handCount; i++) {
@@ -475,6 +769,7 @@ static void play_selected(void) {
     G.nextEvent = 0;
     G.flow = BO_FLOW_SCORE;
     G.wait = 0.7;
+    G.focus = BO_FOCUS_NONE;
     layout();
     fprintf(stderr, "play: %s, total %.0f, round %.0f of %.0f\n", G.shownHand, G.score.total, G.run->chips,
             G.run->blind_chips);
@@ -501,21 +796,91 @@ static void discard_selected(void) {
     sync_hand();
 }
 
+// The place on the screen of the card of a score event.
+static void event_place(const BOScoreEvent *event, float *x, float *y, float **pulse) {
+    static float none;
+    *pulse = &none;
+    switch (event->area) {
+    case BO_AREA_PLAY:
+        *x = G.play[event->index].tx + G.cardW / 2;
+        *y = G.play[event->index].ty - G.height * 0.07f;
+        *pulse = &G.play[event->index].pulse;
+        break;
+    case BO_AREA_HAND:
+        *x = G.hand[event->index].tx + G.cardW / 2;
+        *y = G.hand[event->index].ty - G.height * 0.07f;
+        *pulse = &G.hand[event->index].pulse;
+        break;
+    case BO_AREA_JOKER:
+        if (event->index < G.jokerViewCount) {
+            *x = G.jokerViews[event->index].x + G.cardW / 2;
+            *y = G.jokerViews[event->index].y + G.cardH + G.height * 0.01f;
+            *pulse = &G.jokerViews[event->index].pulse;
+        }
+        break;
+    case BO_AREA_CONSUMABLE:
+        if (event->index < G.consumableViewCount) {
+            *x = G.consumableViews[event->index].x + G.cardW / 2;
+            *y = G.consumableViews[event->index].y + G.cardH + G.height * 0.01f;
+            *pulse = &G.consumableViews[event->index].pulse;
+        }
+        break;
+    }
+}
+
+static void show_event(const BOScoreEvent *event) {
+    float x = G.width / 2, y = G.height / 2, *pulse;
+    event_place(event, &x, &y, &pulse);
+    *pulse = 1;
+    char text[24];
+    unsigned int color = BO_C_WHITE;
+    switch (event->kind) {
+    case BO_EVENT_CHIPS:
+        snprintf(text, sizeof(text), "+%.0f", event->value);
+        color = BO_C_BLUE;
+        break;
+    case BO_EVENT_MULT:
+        snprintf(text, sizeof(text), "+%.14g Mult", event->value);
+        color = BO_C_RED;
+        break;
+    case BO_EVENT_XMULT:
+        snprintf(text, sizeof(text), "X%.14g Mult", event->value);
+        color = BO_C_RED;
+        break;
+    case BO_EVENT_DOLLARS:
+        snprintf(text, sizeof(text), "$%.0f", event->value);
+        color = BO_C_MONEY;
+        break;
+    case BO_EVENT_AGAIN:
+        snprintf(text, sizeof(text), "Again!");
+        color = BO_C_ORANGE;
+        break;
+    case BO_EVENT_LEVEL_UP:
+        snprintf(text, sizeof(text), "Level up!");
+        color = BO_C_ORANGE;
+        break;
+    case BO_EVENT_DEBUFFED:
+        snprintf(text, sizeof(text), "Debuffed");
+        color = BO_C_RED;
+        break;
+    default:
+        snprintf(text, sizeof(text), "!");
+        color = BO_C_ORANGE;
+        break;
+    }
+    popup(text, x, y, color);
+    G.shownChips = event->chips;
+    G.shownMult = event->mult;
+}
+
 static void update_flow(double dt) {
     G.wait -= dt;
     if (G.wait > 0) return;
     if (G.flow == BO_FLOW_SCORE) {
         if (G.nextEvent < G.score.event_count) {
             const BOScoreEvent *event = &G.score.events[G.nextEvent++];
-            BOCardView *card = &G.play[event->index];
-            card->pulse = 1;
-            char text[16];
-            snprintf(text, sizeof(text), "+%.0f", event->value);
-            unsigned int color = event->kind == BO_EVENT_CHIPS ? BO_C_BLUE : BO_C_RED;
-            popup(text, card->tx + G.cardW / 2, card->ty - G.height * 0.07f, color);
-            G.shownChips = event->chips;
-            G.shownMult = event->mult;
-            G.wait = 0.4;
+            show_event(event);
+            G.wait = event->kind == BO_EVENT_MESSAGE ? 0.3 : 0.38;
         } else {
             for (int i = 0; i < G.playCount; i++) {
                 G.play[i].tx = G.width + G.cardW;
@@ -531,7 +896,6 @@ static void update_flow(double dt) {
         if (G.run->state == BO_STATE_SELECTING) {
             sync_hand();
         } else {
-            // The round is over. The cards that are left leave.
             G.handCount = 0;
         }
     }
@@ -554,7 +918,6 @@ static void draw_hand_controls(void) {
                      idle && count > 0 && run->discards_left > 0)) {
         discard_selected();
     }
-    // The two sort buttons, in a box with the label "Sort Hand".
     float sw = area.w * 0.17f, sh = bh * 0.62f;
     BORect sortBox = bo_rect(centre - sw - G.width * 0.012f, y - bh * 0.08f, sw * 2 + G.width * 0.024f, bh * 1.16f);
     bo_ui_box(sortBox, BO_C_DARK);
@@ -575,17 +938,18 @@ static void draw_hand_controls(void) {
 static void draw_round(void) {
     for (int i = 0; i < G.handCount; i++) {
         BOCardView *c = &G.hand[i];
-        draw_card(c);
+        draw_view(c);
         if (G.flow == BO_FLOW_IDLE && G.run->state == BO_STATE_SELECTING) {
             bo_ui_area(BO_ID_HAND_CARD + i, bo_rect(c->tx, c->ty, G.cardW, G.cardH));
         }
     }
-    for (int i = 0; i < G.playCount; i++) draw_card(&G.play[i]);
+    for (int i = 0; i < G.playCount; i++) draw_view(&G.play[i]);
     draw_hand_controls();
     for (int i = 0; i < G.handCount; i++) {
         if (!bo_ui_clicked(BO_ID_HAND_CARD + i)) continue;
         int count = 0;
         selected_mask(&count);
+        G.focus = BO_FOCUS_NONE;
         if (!G.hand[i].selected && count >= BO_MAX_PLAY) break;
         G.hand[i].selected = !G.hand[i].selected;
         update_preview();
@@ -594,18 +958,21 @@ static void draw_round(void) {
     }
 }
 
+// --- The blind select, the cash out, and the end ----------------------------
+
 static void draw_blind_select(void) {
     BORun *run = G.run;
     BORect area = main_area();
     float colW = area.w * 0.31f, gap = (area.w - colW * 3) / 2;
     char value[32], text[48];
+    float baseTop = G.height * 0.30f;
     for (int slot = 0; slot < 3; slot++) {
         BOBlindId blind = bo_run_slot_blind(run, (BOBlindSlot)slot);
         const BOBlindInfo *info = bo_blind_info(blind);
         int current = slot == (int)run->slot;
         int done = slot < (int)run->slot;
         float x = area.x + slot * (colW + gap);
-        float top = current ? G.height * 0.18f : G.height * 0.26f;
+        float top = current ? baseTop - G.height * 0.035f : baseTop;
         BORect box = bo_rect(x, top, colW, G.height - top + 20);
         bo_ui_box(box, BO_C_BLACK);
         BORect inner = bo_rect(x + 8, top + 8, colW - 16, box.h - 16);
@@ -646,7 +1013,7 @@ static void draw_blind_select(void) {
 static void draw_cash_out(void) {
     BORun *run = G.run;
     BORect area = main_area();
-    BORect box = bo_rect(area.x + area.w * 0.1f, G.height * 0.16f, area.w * 0.8f, G.height * 0.62f);
+    BORect box = bo_rect(area.x + area.w * 0.08f, G.height * 0.27f, area.w * 0.84f, G.height * 0.66f);
     bo_ui_box(box, BO_C_BLACK);
     BORect inner = bo_rect(box.x + 8, box.y + 8, box.w - 16, box.h - 16);
     bo_ui_box(inner, BO_C_DARK);
@@ -656,9 +1023,10 @@ static void draw_cash_out(void) {
                      text, 1)) {
         bo_run_cash_out(run);
         G.shownRound = 0;
+        G.focus = BO_FOCUS_NONE;
         return;
     }
-    float y = inner.y + G.height * 0.15f, rowH = G.height * 0.07f, size = G.height * 0.045f;
+    float y = inner.y + G.height * 0.15f, rowH = G.height * 0.065f, size = G.height * 0.042f;
     for (int r = 0; r < run->eval.row_count; r++) {
         const BOEvalRow *row = &run->eval.rows[r];
         if (row->kind == BO_EVAL_BLIND) {
@@ -667,9 +1035,9 @@ static void draw_cash_out(void) {
             bo_font_draw(info->name, inner.x + 24 + rowH, y + rowH * 0.2f, size, bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
             snprintf(value, sizeof(value), "%.*s", row->dollars, "$$$$$$$$$$");
             bo_font_draw(value, inner.x + inner.w - 16, y + rowH * 0.2f, size, bo_rgb(BO_C_MONEY), BO_ALIGN_RIGHT);
-            y += rowH + 10;
+            y += rowH + 8;
             bo_gfx_rect(inner.x + 16, y, inner.w - 32, 2, bo_rgb(BO_C_L_BLACK));
-            y += 14;
+            y += 12;
             continue;
         }
         const char *label = "";
@@ -688,7 +1056,7 @@ static void draw_cash_out(void) {
             label = "Interest ($1 per $5)";
             color = BO_C_MONEY;
         } else if (row->kind == BO_EVAL_JOKER) {
-            label = bo_center(run->jokers[row->index].center)->name;
+            label = row->index < run->joker_count ? bo_center(run->jokers[row->index].center)->name : "Joker";
         }
         float x = inner.x + 16;
         if (count[0]) {
@@ -705,7 +1073,7 @@ static void draw_cash_out(void) {
 static void draw_end(int won) {
     BORun *run = G.run;
     BORect area = main_area();
-    BORect box = bo_rect(area.x + area.w * 0.12f, G.height * 0.14f, area.w * 0.76f, G.height * 0.66f);
+    BORect box = bo_rect(area.x + area.w * 0.12f, G.height * 0.26f, area.w * 0.76f, G.height * 0.62f);
     bo_ui_box(box, BO_C_BLACK);
     BORect inner = bo_rect(box.x + 8, box.y + 8, box.w - 16, box.h - 16);
     bo_ui_box(inner, BO_C_DARK);
@@ -739,13 +1107,200 @@ static void draw_end(int won) {
     }
 }
 
+// --- The shop --------------------------------------------------------------
+
+static BORect shop_box(void) {
+    BORect area = main_area();
+    return bo_rect(area.x, G.height * 0.255f, area.w + G.width * 0.02f, G.height * 0.73f);
+}
+
+static void shop_card_place(int index, int count, float *x, float *y) {
+    BORect box = shop_box();
+    BORect cards = bo_rect(box.x + box.w * 0.34f, box.y, box.w * 0.62f, G.cardH);
+    *x = slot_x(cards, index, count);
+    *y = box.y + G.height * 0.07f;
+}
+
+static void draw_price(int cost, float x, float y) {
+    char text[16];
+    snprintf(text, sizeof(text), "$%d", cost);
+    float w = G.cardW * 0.5f, h = G.height * 0.05f;
+    bo_ui_box(bo_rect(x + (G.cardW - w) / 2, y - h - 2, w, h), BO_C_DARK);
+    bo_font_draw(text, x + G.cardW / 2, y - h + h * 0.08f, h * 0.8f, bo_rgb(BO_C_MONEY), BO_ALIGN_CENTER);
+}
+
+static void draw_shop(void) {
+    BORun *run = G.run;
+    BORect box = shop_box();
+    bo_ui_box(box, BO_C_BLACK);
+    BORect inner = bo_rect(box.x + 8, box.y + 8, box.w - 16, box.h - 16);
+    bo_ui_box(inner, BO_C_DARK);
+
+    float bw = box.w * 0.26f, bh = G.height * 0.12f;
+    float bx = inner.x + 12, by = inner.y + 16;
+    if (bo_ui_button(BO_ID_NEXT_ROUND, bo_rect(bx, by, bw, bh), BO_C_RED, "Next Round", 1)) {
+        bo_run_end_shop(run);
+        G.focus = BO_FOCUS_NONE;
+        return;
+    }
+    char text[24];
+    snprintf(text, sizeof(text), "Reroll $%d", run->reroll_cost);
+    int canReroll = run->reroll_cost <= bo_run_spendable(run) || run->reroll_cost <= 0;
+    if (bo_ui_button(BO_ID_REROLL, bo_rect(bx, by + bh + 12, bw, bh), BO_C_GREEN, text, canReroll)) {
+        bo_run_reroll(run);
+        G.focus = BO_FOCUS_NONE;
+    }
+
+    // The cards for sale.
+    for (int i = 0; i < run->shop_count; i++) {
+        float x, y;
+        shop_card_place(i, run->shop_count, &x, &y);
+        int focused = G.focus == BO_FOCUS_SHOP && G.focusIndex == i;
+        if (focused) y -= G.cardH * 0.08f;
+        BOShopCard *card = &run->shop[i];
+        if (card->is_playing_card) {
+            draw_playing_card(&card->card, x, y, G.cardW, G.cardH);
+        } else {
+            draw_item(&card->item, x, y, G.cardW, G.cardH);
+        }
+        draw_price(card->item.cost, x, y);
+        bo_ui_area(BO_ID_SHOP + i, bo_rect(x, y, G.cardW, G.cardH));
+    }
+
+    // The voucher and the packs. They open in 0.4 and 0.5.
+    float y2 = inner.y + inner.h - G.cardH * 1.1f - 8;
+    if (run->has_shop_voucher) {
+        float x = inner.x + inner.w * 0.08f;
+        draw_item(&run->shop_voucher, x, y2, G.cardW, G.cardH);
+        draw_price(run->shop_voucher.cost, x, y2);
+        bo_ui_area(BO_ID_VOUCHER, bo_rect(x, y2, G.cardW, G.cardH));
+    }
+    for (int i = 0; i < run->shop_pack_count; i++) {
+        float x = inner.x + inner.w * 0.42f + i * (G.cardW * 1.25f);
+        draw_item(&run->shop_packs[i], x, y2, G.cardW * 1.1f, G.cardH * 1.1f);
+        draw_price(run->shop_packs[i].cost, x + G.cardW * 0.05f, y2);
+        bo_ui_area(BO_ID_PACK + i, bo_rect(x, y2, G.cardW * 1.1f, G.cardH * 1.1f));
+    }
+}
+
+// --- The focus of a card ---------------------------------------------------
+
+static void draw_focus(void) {
+    BORun *run = G.run;
+    float x = 0, y = 0;
+    const BOItem *item = NULL;
+    const char *action = NULL;
+    unsigned int colour = BO_C_ORANGE;
+    int enabled = 1;
+    char label[24];
+    switch (G.focus) {
+    case BO_FOCUS_JOKER:
+        if (G.focusIndex >= run->joker_count) break;
+        item = &run->jokers[G.focusIndex];
+        x = G.jokerViews[G.focusIndex].x;
+        y = G.jokerViews[G.focusIndex].y;
+        snprintf(label, sizeof(label), "Sell $%d", item->sell_cost);
+        action = label;
+        colour = BO_C_GREEN;
+        enabled = !item->eternal && G.flow == BO_FLOW_IDLE;
+        break;
+    case BO_FOCUS_CONSUMABLE:
+        if (G.focusIndex >= run->consumable_count) break;
+        item = &run->consumables[G.focusIndex];
+        x = G.consumableViews[G.focusIndex].x;
+        y = G.consumableViews[G.focusIndex].y;
+        snprintf(label, sizeof(label), "Sell $%d", item->sell_cost);
+        action = label;
+        colour = BO_C_GREEN;
+        enabled = G.flow == BO_FLOW_IDLE;
+        break;
+    case BO_FOCUS_SHOP:
+        if (G.focusIndex >= run->shop_count) break;
+        item = &run->shop[G.focusIndex].item;
+        shop_card_place(G.focusIndex, run->shop_count, &x, &y);
+        action = "Buy";
+        enabled = item->cost <= bo_run_spendable(run) || item->cost <= 0;
+        break;
+    case BO_FOCUS_VOUCHER:
+        if (!run->has_shop_voucher) break;
+        item = &run->shop_voucher;
+        x = shop_box().x + 16;
+        y = shop_box().y + shop_box().h - G.cardH * 1.2f;
+        break;
+    case BO_FOCUS_PACK:
+        if (G.focusIndex >= run->shop_pack_count) break;
+        item = &run->shop_packs[G.focusIndex];
+        x = shop_box().x + shop_box().w * 0.42f;
+        y = shop_box().y + shop_box().h - G.cardH * 1.2f;
+        break;
+    default: break;
+    }
+    if (!item) {
+        G.focus = BO_FOCUS_NONE;
+        return;
+    }
+    // A playing card in the shop has no text yet; only its price shows.
+    if (G.focus == BO_FOCUS_SHOP && run->shop[G.focusIndex].is_playing_card) {
+        if (bo_ui_button(BO_ID_ACTION, bo_rect(x, y + G.cardH + 8, G.cardW, G.height * 0.07f), BO_C_ORANGE, "Buy",
+                         enabled)) {
+            bo_run_buy(run, G.focusIndex);
+            G.focus = BO_FOCUS_NONE;
+        }
+        return;
+    }
+    if (draw_card_text(item, x, y, action, colour, enabled)) {
+        int done = 0;
+        if (G.focus == BO_FOCUS_JOKER) done = bo_run_sell_joker(run, G.focusIndex);
+        if (G.focus == BO_FOCUS_CONSUMABLE) done = bo_run_sell_consumable(run, G.focusIndex);
+        if (G.focus == BO_FOCUS_SHOP) done = bo_run_buy(run, G.focusIndex);
+        if (done) G.focus = BO_FOCUS_NONE;
+        fprintf(stderr, "action: %s\n", done ? "done" : "refused");
+    }
+}
+
+static void handle_focus_taps(void) {
+    BORun *run = G.run;
+    for (int i = 0; i < run->joker_count; i++) {
+        if (bo_ui_clicked(BO_ID_JOKER + i)) {
+            int same = G.focus == BO_FOCUS_JOKER && G.focusIndex == i;
+            G.focus = same ? BO_FOCUS_NONE : BO_FOCUS_JOKER;
+            G.focusIndex = i;
+        }
+    }
+    for (int i = 0; i < run->consumable_count; i++) {
+        if (bo_ui_clicked(BO_ID_CONSUMABLE + i)) {
+            int same = G.focus == BO_FOCUS_CONSUMABLE && G.focusIndex == i;
+            G.focus = same ? BO_FOCUS_NONE : BO_FOCUS_CONSUMABLE;
+            G.focusIndex = i;
+        }
+    }
+    for (int i = 0; i < run->shop_count; i++) {
+        if (bo_ui_clicked(BO_ID_SHOP + i)) {
+            int same = G.focus == BO_FOCUS_SHOP && G.focusIndex == i;
+            G.focus = same ? BO_FOCUS_NONE : BO_FOCUS_SHOP;
+            G.focusIndex = i;
+        }
+    }
+    if (bo_ui_clicked(BO_ID_VOUCHER)) G.focus = G.focus == BO_FOCUS_VOUCHER ? BO_FOCUS_NONE : BO_FOCUS_VOUCHER;
+    for (int i = 0; i < run->shop_pack_count; i++) {
+        if (bo_ui_clicked(BO_ID_PACK + i)) {
+            int same = G.focus == BO_FOCUS_PACK && G.focusIndex == i;
+            G.focus = same ? BO_FOCUS_NONE : BO_FOCUS_PACK;
+            G.focusIndex = i;
+        }
+    }
+    if (bo_ui_clicked(BO_ID_BACKGROUND)) G.focus = BO_FOCUS_NONE;
+}
+
+// --- The frame -------------------------------------------------------------
+
 static void draw_popups(double dt) {
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 24; i++) {
         BOPopup *p = &G.popups[i];
         if (p->age <= 0 || p->age > 1.2f) continue;
         p->age += (float)dt;
         float alpha = p->age < 0.9f ? 1 : (1.2f - p->age) / 0.3f;
-        float size = G.height * 0.07f;
+        float size = G.height * 0.06f;
         bo_font_draw(p->text, p->x + 2, p->y - p->age * 20 + 2, size, bo_rgba(0x000000, alpha * 0.4f),
                      BO_ALIGN_CENTER);
         bo_font_draw(p->text, p->x, p->y - p->age * 20, size, bo_rgba(p->color, alpha), BO_ALIGN_CENTER);
@@ -758,11 +1313,10 @@ static void approach(float *value, float target, double dt) {
 
 // Counts a shown number up to its value in about half a second.
 static void count_to(double *shown, double value, double dt) {
-    double step = (value - *shown) * (1 - exp(-dt * 8));
     if (fabs(value - *shown) < 1) {
         *shown = value;
     } else {
-        *shown += step;
+        *shown += (value - *shown) * (1 - exp(-dt * 8));
     }
 }
 
@@ -786,12 +1340,26 @@ void bo_game_frame(double dt) {
             areas[a][i].pulse = fmaxf(0, areas[a][i].pulse - (float)dt * 4);
         }
     }
-    // The round score counts up after the hand scores, as in Balatro.
+    BORect jokers = joker_area(), consumables = consumable_area();
+    for (int i = 0; i < G.jokerViewCount; i++) {
+        approach(&G.jokerViews[i].x, slot_x(jokers, i, G.jokerViewCount), dt);
+        approach(&G.jokerViews[i].y, jokers.y, dt);
+        G.jokerViews[i].pulse = fmaxf(0, G.jokerViews[i].pulse - (float)dt * 4);
+    }
+    for (int i = 0; i < G.consumableViewCount; i++) {
+        approach(&G.consumableViews[i].x, slot_x(consumables, i, G.consumableViewCount), dt);
+        approach(&G.consumableViews[i].y, consumables.y, dt);
+        G.consumableViews[i].pulse = fmaxf(0, G.consumableViews[i].pulse - (float)dt * 4);
+    }
+    // The tallies of the jokers, as Card:update keeps them.
+    for (int i = 0; i < G.run->joker_count; i++) bo_joker_update(G.run, &G.run->jokers[i]);
     if (G.flow != BO_FLOW_SCORE) count_to(&G.shownRound, G.run->chips, dt);
     count_to(&G.shownDollars, G.run->dollars, dt);
 
     bo_ui_begin();
     bo_gfx_begin(G.width, G.height, bo_rgb(0x3a5c4f));
+    // A tap on the table takes the focus away.
+    bo_ui_area(BO_ID_BACKGROUND, bo_rect(0, 0, G.width, G.height));
     draw_panel();
     draw_deck();
     BORunState state = G.run->state;
@@ -805,9 +1373,14 @@ void bo_game_frame(double dt) {
         } else {
             draw_cash_out();
         }
+    } else if (state == BO_STATE_SHOP) {
+        draw_shop();
     } else if (state == BO_STATE_GAME_OVER) {
         draw_end(0);
     }
+    draw_items();
+    handle_focus_taps();
+    if (G.focus != BO_FOCUS_NONE) draw_focus();
     draw_popups(dt);
     bo_gfx_flush();
     bo_ui_end();
@@ -815,6 +1388,7 @@ void bo_game_frame(double dt) {
 
 void bo_game_debug(const char *line) {
     double value;
+    char word[64];
     if (sscanf(line, "target %lf", &value) == 1) {
         G.run->blind_chips = value;
         fprintf(stderr, "debug: target %.0f\n", value);
@@ -824,11 +1398,65 @@ void bo_game_debug(const char *line) {
     } else if (sscanf(line, "dollars %lf", &value) == 1) {
         G.run->dollars = (int)value;
         fprintf(stderr, "debug: dollars %.0f\n", value);
+    } else if (sscanf(line, "joker %63s", word) == 1) {
+        BOCenterId center = bo_center_by_key(word);
+        if (center != BO_CENTER_NONE) {
+            BOItem item = bo_run_create_item(G.run, 0, 0, 0, 0, center, NULL, 0);
+            if (bo_center(center)->consumeable) {
+                bo_run_add_consumable(G.run, &item);
+            } else {
+                bo_run_add_joker(G.run, &item);
+            }
+        }
+        fprintf(stderr, "debug: joker %s\n", word);
     } else {
         fprintf(stderr, "debug: unknown command: %s", line);
     }
 }
 
+// A touch on a joker can be a tap or the start of a drag.
+static int joker_at(float x, float y) {
+    BORect area = joker_area();
+    for (int i = G.jokerViewCount - 1; i >= 0; i--) {
+        if (x >= G.jokerViews[i].x && x < G.jokerViews[i].x + G.cardW && y >= area.y && y < area.y + G.cardH) return i;
+    }
+    return -1;
+}
+
 void bo_game_touch(int phase, float x, float y) {
-    if (phase == BO_TOUCH_BEGAN) bo_ui_tap(x, y);
+    if (phase == BO_TOUCH_BEGAN) {
+        G.dragIndex = G.flow == BO_FLOW_IDLE ? joker_at(x, y) : -1;
+        G.dragging = 0;
+        G.dragStartX = x;
+        G.dragStartY = y;
+        G.dragX = x;
+        if (G.dragIndex < 0) bo_ui_tap(x, y);
+    } else if (phase == BO_TOUCH_MOVED) {
+        if (G.dragIndex >= 0 && (G.dragging || fabsf(x - G.dragStartX) > 14)) {
+            G.dragging = 1;
+            G.dragX = x;
+        }
+    } else if (phase == BO_TOUCH_ENDED) {
+        if (G.dragIndex >= 0) {
+            if (G.dragging) {
+                // The new place is the slot nearest to the finger.
+                BORect area = joker_area();
+                int count = G.run->joker_count, best = G.dragIndex;
+                float bestDistance = 1e9f;
+                for (int i = 0; i < count; i++) {
+                    float d = fabsf(slot_x(area, i, count) + G.cardW / 2 - x);
+                    if (d < bestDistance) {
+                        bestDistance = d;
+                        best = i;
+                    }
+                }
+                bo_run_move_joker(G.run, G.dragIndex, best);
+                G.focus = BO_FOCUS_NONE;
+            } else {
+                bo_ui_tap(G.dragStartX, G.dragStartY);
+            }
+        }
+        G.dragIndex = -1;
+        G.dragging = 0;
+    }
 }

@@ -153,6 +153,8 @@ static struct {
     BOFlow flow;
     double wait;
     double shownChips, shownMult;
+    BOMotion chipsBox, multBox;  // The boxes shake when their number changes.
+    float jiggle;                // G.ROOM.jiggle: the shake of the room.
     const char *shownHand;
     double shownRound;  // The round score on the screen. It counts up.
     double shownDollars;
@@ -348,6 +350,8 @@ static void new_run(void) {
     G.shownHand = NULL;
     G.shownRound = 0;
     G.shownDollars = G.run->dollars;
+    bo_motion_place(&G.chipsBox, 0, 0, 0);
+    bo_motion_place(&G.multBox, 0, 0, 0);
     G.endless = 0;
     G.focus = BO_FOCUS_NONE;
     fprintf(stderr, "new run: seed %s\n", seed);
@@ -721,12 +725,16 @@ static void draw_panel(void) {
     }
     float half = (inner - pad * 3) / 2;
     float rowY = y + h * 0.42f, rowH = h * 0.48f;
+    bo_gfx_transform(G.chipsBox.r, G.chipsBox.scale, pad * 2 + half / 2, rowY + rowH / 2);
     bo_ui_box(bo_rect(pad * 2, rowY, half, rowH), BO_C_BLUE);
-    bo_ui_box(bo_rect(pad * 3 + half, rowY, half, rowH), BO_C_RED);
     if (G.shownHand) {
         format_number(G.shownChips, value, sizeof(value));
         bo_font_draw(value, pad * 2 + half - pad * 0.6f, rowY + rowH * 0.12f, rowH * 0.8f, bo_rgb(BO_C_WHITE),
                      BO_ALIGN_RIGHT);
+    }
+    bo_gfx_transform(G.multBox.r, G.multBox.scale, pad * 3 + half * 1.5f, rowY + rowH / 2);
+    bo_ui_box(bo_rect(pad * 3 + half, rowY, half, rowH), BO_C_RED);
+    if (G.shownHand) {
         // The mult can have a part after the point, as 15.5.
         double m = G.shownMult;
         if (m == floor(m)) {
@@ -737,6 +745,7 @@ static void draw_panel(void) {
         bo_font_draw(value, pad * 3 + half + pad * 0.6f, rowY + rowH * 0.12f, rowH * 0.8f, bo_rgb(BO_C_WHITE),
                      BO_ALIGN_LEFT);
     }
+    bo_gfx_transform(0, 1, 0, 0);
     bo_font_draw("X", panelW / 2, rowY + rowH * 0.2f, rowH * 0.6f, bo_rgb(BO_C_RED), BO_ALIGN_CENTER);
 
     // The hands, the discards, the money, the ante, and the round.
@@ -1089,6 +1098,11 @@ static void show_event(const BOScoreEvent *event) {
         break;
     }
     popup(text, x, y, color);
+    // juice_up() with no arguments: 0.4, and a turn of 0.24 to a side.
+    float side = (G.nextEvent & 1) ? 0.24f : -0.24f;
+    if (event->chips != G.shownChips) bo_motion_juice(&G.chipsBox, 0.4f, side, G.time);
+    if (event->mult != G.shownMult) bo_motion_juice(&G.multBox, 0.4f, -side, G.time);
+    G.jiggle += 0.7f;
     G.shownChips = event->chips;
     G.shownMult = event->mult;
 }
@@ -1905,6 +1919,17 @@ static void move_items(double dt) {
     move_item_row(G.consumableViews, G.consumableViewCount, consumable_area(), BO_FOCUS_CONSUMABLE, dt);
 }
 
+// update_canvas_juice with the screen shake at 50, as it starts. The
+// background does not move.
+static void shake_room(void) {
+    const float amount = 1.5f;
+    float t = (float)G.time, u = unit();
+    float r = (0.001f * sinf(0.3f * t) + 0.002f * G.jiggle * sinf(39.913f * t)) * amount;
+    float dx = amount * (0.015f * sinf(0.913f * t) + 0.01f * G.jiggle * amount * sinf(19.913f * t));
+    float dy = amount * (0.015f * sinf(0.952f * t) + 0.01f * G.jiggle * amount * sinf(21.913f * t));
+    bo_gfx_room(r, dx * u, dy * u);
+}
+
 void bo_game_frame(double dt) {
     bo_debug_poll(dt);
     G.time += dt;
@@ -1919,6 +1944,9 @@ void bo_game_frame(double dt) {
     for (int i = 0; i < G.handCount; i++) move_view(&G.hand[i], dt);
     for (int i = 0; i < G.playCount; i++) move_view(&G.play[i], dt);
     move_items(dt);
+    bo_motion_step(&G.chipsBox, 0, 0, 0, 1, dt, G.time);
+    bo_motion_step(&G.multBox, 0, 0, 0, 1, dt, G.time);
+    G.jiggle *= (float)fmax(0, 1 - 5 * dt);
     // The tallies of the jokers, as Card:update keeps them.
     for (int i = 0; i < G.run->joker_count; i++) bo_joker_update(G.run, &G.run->jokers[i]);
     if (G.flow != BO_FLOW_SCORE) count_to(&G.shownRound, G.run->chips, dt);
@@ -1932,6 +1960,7 @@ void bo_game_frame(double dt) {
     update_background(dt);
     bo_gfx_set_background((float)G.time, G.backSpinTime, G.backC, G.backL, G.backD, G.backContrast, G.backSpin);
     bo_gfx_begin(G.width, G.height, bo_rgb(0x3a5c4f));
+    shake_room();
     // A tap on the table takes the focus away.
     bo_ui_area(BO_ID_BACKGROUND, bo_rect(0, 0, G.width, G.height));
     draw_panel();

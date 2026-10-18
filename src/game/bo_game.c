@@ -230,7 +230,8 @@ static struct {
     double time;
     int frames;
     double fpsTime;
-} G = {.dragIndex = -1};
+    float pitchMod;  // G.PITCH_MOD: the speed of the music.
+} G = {.dragIndex = -1, .pitchMod = 1};
 
 static void fail(const char *message) {
     snprintf(G.error, sizeof(G.error), "%s", message);
@@ -2812,8 +2813,28 @@ static void shake_room(void) {
     bo_gfx_room(r, dx * u, dy * u);
 }
 
+// modulate_sound: the music track of the state of the game. The pack
+// sparkles of Arcana and Spectral packs and the other packs play music2,
+// the meteors of Celestial packs play music3.
+static void modulate_music(double dt) {
+    const char *track = "music1";
+    BORun *run = G.run;
+    if (run && !G.setup && run->state == BO_STATE_PACK) {
+        track = strcmp(bo_center(run->pack)->kind, "Celestial") == 0 ? "music3" : "music2";
+    } else if (run && !G.setup && run->state == BO_STATE_SHOP) {
+        track = "music4";
+    } else if (run && !G.setup && run->blind_active && bo_blind_info(run->blind)->boss) {
+        track = "music5";
+    }
+    // The music slows to half speed at a game over.
+    int over = run && !G.setup && run->state == BO_STATE_GAME_OVER;
+    G.pitchMod = G.pitchMod * (float)(1 - dt) + (float)dt * (over ? 0.5f : 1);
+    bo_sound_modulate((float)dt, track, G.pitchMod);
+}
+
 void bo_game_frame(double dt) {
     bo_debug_poll(dt);
+    modulate_music(dt);
     G.time += dt;
     G.frames++;
     if (G.time - G.fpsTime >= 5) {

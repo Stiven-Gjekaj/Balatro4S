@@ -28,7 +28,7 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 - Port the seeded random generator, so that a seed gives the same run as in Balatro.
 - Sort the hand by rank or by suit.
 
-## 0.3: the shop and the first jokers
+## 0.3: the shop and the first jokers (done, 2026-10-18)
 
 - Add the shop: the card slots, the voucher slot, the pack slots, and the reroll.
 - Buy and sell cards, with the money and the limit of the interest.

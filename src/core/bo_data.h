@@ -452,6 +452,15 @@ typedef struct {
     double extra;              // config.extra when it is a number.
     uint8_t config_count;
     const BOConfigValue *config;
+    // unlock_condition: its type, as "win_deck", or NULL; its number (extra,
+    // amount, count, stake, ante, chips, or n_rounds); its text (extra,
+    // deck, suit, or the key of an enhancement); and its kind: 1 for
+    // tarot_count or a suit, 2 for planet_count or an enhancement, 3 for a
+    // tally of all enhancements.
+    const char *unlock_type;
+    double unlock_number;
+    const char *unlock_text;
+    uint8_t unlock_kind;
 } BOCenterInfo;
 
 const BOCenterInfo *bo_center(BOCenterId id);

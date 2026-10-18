@@ -42,3 +42,18 @@ BO_TEST(test_data_keeps_the_jokers_in_their_order) {
     }
     BO_EQUAL_INT(last, 150);
 }
+
+BO_TEST(test_data_has_the_unlock_conditions) {
+    const BOCenterInfo *magic = bo_center(BO_B_MAGIC);
+    BO_EQUAL(@(magic->unlock_type), @"win_deck");
+    BO_EQUAL(@(magic->unlock_text), @"b_red");
+    const BOCenterInfo *glass = bo_center(BO_J_GLASS);
+    BO_EQUAL(@(glass->unlock_type), @"modify_deck");
+    BO_EXPECT(glass->unlock_number == 5);
+    BO_EQUAL(@(glass->unlock_text), @"m_glass");
+    BO_EQUAL_INT(glass->unlock_kind, 2);
+    const BOCenterInfo *zodiac = bo_center(BO_B_ZODIAC);
+    BO_EQUAL(@(zodiac->unlock_type), @"win_stake");
+    BO_EXPECT(zodiac->unlock_number == 2);
+    BO_EXPECT(bo_center(BO_J_JOKER)->unlock_type == NULL);
+}

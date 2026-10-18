@@ -180,6 +180,15 @@ typedef struct {
     double extra;              // config.extra when it is a number.
     uint8_t config_count;
     const BOConfigValue *config;
+    // unlock_condition: its type, as "win_deck", or NULL; its number (extra,
+    // amount, count, stake, ante, chips, or n_rounds); its text (extra,
+    // deck, suit, or the key of an enhancement); and its kind: 1 for
+    // tarot_count or a suit, 2 for planet_count or an enhancement, 3 for a
+    // tally of all enhancements.
+    const char *unlock_type;
+    double unlock_number;
+    const char *unlock_text;
+    uint8_t unlock_kind;
 } BOCenterInfo;
 
 const BOCenterInfo *bo_center(BOCenterId id);
@@ -230,11 +239,28 @@ for i, v in ipairs(list) do
         v.perishable_compat and 1 or 0, v.min_ante or 0, v.consumeable and 1 or 0, v.hidden and 1 or 0,
         v.omit and 1 or 0, c_number(v.weight), c_string(v.kind), c_string(v.effect), c_string(v.enhancement_gate),
         c_string(v.no_pool_flag), c_string(v.yes_pool_flag), c_string(type(cfg.type) == 'string' and cfg.type or nil)))
-    c:write(string.format('%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %s},\n',
+    local u = v.unlock_condition or {}
+    local u_type = (u.type and u.type ~= '') and u.type or nil
+    local u_number, u_text, u_kind = nil, nil, 0
+    if type(u.extra) == 'number' then u_number = u.extra
+    elseif type(u.extra) == 'string' then u_text = u.extra
+    elseif type(u.extra) == 'table' then
+        u_number = u.extra.count
+        if u.extra.suit then u_text, u_kind = u.extra.suit, 1
+        elseif u.extra.e_key then u_text, u_kind = u.extra.e_key, 2
+        elseif u.extra.tally then u_kind = 3 end
+    end
+    if u.amount then u_number = u.amount
+    elseif u.tarot_count then u_number, u_kind = u.tarot_count, 1
+    elseif u.planet_count then u_number, u_kind = u.planet_count, 2 end
+    if u.deck then u_text = u.deck end
+    u_number = u.stake or u.ante or u.chips or u.n_rounds or u_number
+    c:write(string.format('%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %s, %s, %s, %s, %d},\n',
         c_number(cfg.mult), c_number(cfg.h_mult), c_number(cfg.h_x_mult), c_number(cfg.h_dollars),
         c_number(cfg.p_dollars), c_number(cfg.t_mult), c_number(cfg.t_chips), c_number(cfg.Xmult or 1),
         c_number(cfg.h_size), c_number(cfg.d_size), c_number(cfg.bonus), c_number(extra),
-        #entries[i], #entries[i] > 0 and ('k' .. i) or 'NULL'))
+        #entries[i], #entries[i] > 0 and ('k' .. i) or 'NULL', c_string(u_type), c_number(u_number),
+        c_string(u_text), u_kind))
 end
 c:write([[
 };

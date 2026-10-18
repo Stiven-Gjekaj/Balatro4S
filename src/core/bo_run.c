@@ -1249,6 +1249,14 @@ void bo_run_move_joker(BORun *run, int from, int to) {
         memmove(&run->jokers[to + 1], &run->jokers[to], sizeof(BOItem) * (from - to));
     }
     run->jokers[to] = moved;
+    // align_cards keeps a pinned joker at the left of the row.
+    for (int i = 1; i < run->joker_count; i++) {
+        for (int j = i; j > 0 && run->jokers[j].pinned && !run->jokers[j - 1].pinned; j--) {
+            BOItem t = run->jokers[j];
+            run->jokers[j] = run->jokers[j - 1];
+            run->jokers[j - 1] = t;
+        }
+    }
 }
 
 void bo_run_reprice(BORun *run) {

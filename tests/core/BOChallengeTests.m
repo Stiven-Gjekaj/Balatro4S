@@ -113,3 +113,15 @@ BO_TEST(test_challenge_jokerless_has_no_joker_and_no_banned_card_in_the_shop) {
     }
     free(run);
 }
+
+BO_TEST(test_challenge_pinned_dagger_stays_at_the_left) {
+    BORun *run = start(3);
+    BO_EQUAL_INT(run->jokers[0].center, BO_J_CEREMONIAL);
+    BO_EXPECT(run->jokers[0].pinned);
+    BOItem joker = bo_pool_make_item(run, BO_J_JOKER);
+    bo_run_add_joker(run, &joker);
+    bo_run_move_joker(run, 1, 0);
+    BO_EQUAL_INT(run->jokers[0].center, BO_J_CEREMONIAL);
+    BO_EQUAL_INT(run->jokers[1].center, BO_J_JOKER);
+    free(run);
+}

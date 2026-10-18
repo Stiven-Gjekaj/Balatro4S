@@ -65,6 +65,8 @@ enum {
     BO_ID_SETUP_PREV,  // The run setup: the deck before this one.
     BO_ID_SETUP_NEXT,
     BO_ID_SETUP_PLAY,
+    BO_ID_STAKE_PREV,
+    BO_ID_STAKE_NEXT,
     BO_ID_BACKGROUND,  // A tap on nothing: the focus goes away.
     BO_ID_HAND_CARD = 100,
     BO_ID_JOKER = 200,
@@ -136,6 +138,7 @@ static struct {
     BOTexture boosters;  // boosters.png.
     BOTexture tags;      // tags.png.
     BOTexture stickers;  // stickers.png: Eternal, Perishable, Rental, and the stakes.
+    BOTexture stakes;    // chips.png: the chip of each stake.
     int effects;         // The shaders of the editions compiled.
     // The background: its three colours, its contrast, and its spin.
     BOColor backC, backL, backD;
@@ -170,6 +173,7 @@ static struct {
     int showInfo;  // The Run Info screen is open.
     int setup;              // The run setup is open: the choice of the deck.
     BOCenterId setupBack;   // The deck of the next run.
+    int setupStake;         // The stake of the next run, from 1 to 8.
     float blindTagX[2], blindTagY[2];  // The tags of the blind select.
 
     // A drag of a joker.
@@ -347,7 +351,7 @@ static void new_run(void) {
     // Here the time of the clock gives the number.
     char seed[9];
     bo_random_string((double)time(NULL) * 0.33411983 + fmod(G.time, 1000) * 0.412311010, seed);
-    bo_run_start_deck(G.run, seed, G.setupBack ? G.setupBack : BO_B_RED, 1);
+    bo_run_start_deck(G.run, seed, G.setupBack ? G.setupBack : BO_B_RED, G.setupStake ? G.setupStake : 1);
     G.handCount = 0;
     G.playCount = 0;
     G.jokerViewCount = 0;
@@ -360,7 +364,7 @@ static void new_run(void) {
     bo_motion_place(&G.multBox, 0, 0, 0);
     G.endless = 0;
     G.focus = BO_FOCUS_NONE;
-    fprintf(stderr, "new run: seed %s, %s\n", seed, bo_center(G.run->back)->key);
+    fprintf(stderr, "new run: seed %s, %s, stake %d\n", seed, bo_center(G.run->back)->key, G.run->stake);
 }
 
 int bo_game_start(const char *love_path, int width, int height) {
@@ -398,6 +402,7 @@ int bo_game_start(const char *love_path, int width, int height) {
     G.boosters = load_texture(zip, "resources/textures/2x/boosters.png", scale);
     G.tags = load_texture(zip, "resources/textures/2x/tags.png", scale);
     G.stickers = load_texture(zip, "resources/textures/2x/stickers.png", scale);
+    G.stakes = load_texture(zip, "resources/textures/2x/chips.png", 1);
 
     size_t fontSize = 0;
     unsigned char *font = bo_zip_read(zip, "resources/fonts/m6x11plus.ttf", &fontSize);
@@ -437,6 +442,7 @@ int bo_game_start(const char *love_path, int width, int height) {
     fprintf(stderr, "text: %s\n", G.text ? "loaded" : "missing");
     G.run = calloc(1, sizeof(BORun));
     G.setupBack = BO_B_RED;
+    G.setupStake = 1;
     G.setup = 1;
     new_run();
     return 1;
@@ -1479,6 +1485,42 @@ static void draw_setup(void) {
         bo_rich_draw(d.lines[i], tx + tw / 2, body.y + pad + i * line * 1.2f, line, bo_rgb(BO_C_TEXT_DARK),
                      BO_ALIGN_CENTER);
     }
+    // The stake: its chip between two arrows, its name, and its text.
+    static const char *stakeKeys[8] = {"stake_white", "stake_red", "stake_green", "stake_black",
+                                        "stake_blue", "stake_purple", "stake_orange", "stake_gold"};
+    static const int chipPos[8][2] = {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {3, 0}, {0, 1}, {1, 1}, {2, 1}};
+    int stake = G.setupStake;
+    float sy = inner.y + inner.h * 0.58f, chip = G.height * 0.1f;
+    float scx = cx + cw / 2 - chip / 2;
+    draw_cell(&G.stakes, 5, 2, chipPos[stake - 1][0], chipPos[stake - 1][1], scx, sy, chip, chip,
+              bo_rgb(BO_C_WHITE));
+    float sah = chip * 0.8f;
+    if (bo_ui_button(BO_ID_STAKE_PREV, bo_rect(cx - aw - 14, sy + (chip - sah) / 2, aw, sah), BO_C_RED, "<", 1)) {
+        G.setupStake = stake == 1 ? 8 : stake - 1;
+    }
+    if (bo_ui_button(BO_ID_STAKE_NEXT, bo_rect(cx + cw + 14, sy + (chip - sah) / 2, aw, sah), BO_C_RED, ">", 1)) {
+        G.setupStake = stake == 8 ? 1 : stake + 1;
+    }
+    char path[64];
+    snprintf(path, sizeof(path), "descriptions.Stake.%s", stakeKeys[stake - 1]);
+    BOLuaValue *entry = G.text ? bo_luatab_path(G.text, path) : NULL;
+    const char *stakeName = entry ? bo_luatab_string(entry, "name") : NULL;
+    BORect stakeBox = bo_rect(tx, sy - G.height * 0.02f, tw, G.height * 0.06f);
+    bo_ui_box(stakeBox, BO_C_L_BLACK);
+    bo_font_draw(stakeName ? stakeName : "Stake", tx + tw / 2, stakeBox.y + G.height * 0.005f, G.height * 0.05f,
+                 bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    BOLuaValue *lines = entry ? bo_luatab_get(entry, "text") : NULL;
+    int lineCount = lines ? bo_luatab_length(lines) : 0;
+    float sline = G.height * 0.036f;
+    BORect stakeBody = bo_rect(tx, stakeBox.y + stakeBox.h + 6, tw, lineCount * sline * 1.2f + pad);
+    if (lineCount) bo_ui_box(stakeBody, BO_C_WHITE);
+    for (int i = 0; i < lineCount; i++) {
+        BOLuaValue *l = bo_luatab_item(lines, i);
+        if (!l || l->type != BO_LUA_STRING) continue;
+        bo_rich_draw(l->string, tx + tw / 2, stakeBody.y + pad * 0.5f + i * sline * 1.2f, sline,
+                     bo_rgb(BO_C_TEXT_DARK), BO_ALIGN_CENTER);
+    }
+
     float bw = inner.w * 0.34f, bh = G.height * 0.11f;
     if (bo_ui_button(BO_ID_SETUP_PLAY, bo_rect(inner.x + (inner.w - bw) / 2, inner.y + inner.h - bh - 14, bw, bh),
                      BO_C_BLUE, "Play", 1)) {
@@ -2132,6 +2174,10 @@ void bo_game_debug(const char *line) {
             if (strcmp(word, "rental") == 0) joker->rental = 1;
         }
         fprintf(stderr, "debug: sticker %s\n", word);
+    } else if (sscanf(line, "stake %lf", &value) == 1) {
+        // The stake of the next run.
+        if (value >= 1 && value <= 8) G.setupStake = (int)value;
+        fprintf(stderr, "debug: stake %.0f\n", value);
     } else if (sscanf(line, "deck %63s", word) == 1) {
         // A new run with this deck.
         BOCenterId center = bo_center_by_key(word);

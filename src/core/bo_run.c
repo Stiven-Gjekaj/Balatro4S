@@ -92,12 +92,15 @@ void bo_run_sort_hand(BORun *run, int by_suit) {
 // down as it comes.
 void bo_run_draw_cards(BORun *run, int count) {
     if (count > run->deck_count) count = run->deck_count;
+    int drawn = 0;
     for (int i = 0; i < count && run->hand_count < BO_MAX_HAND; i++) {
         BOCard card = run->deck[--run->deck_count];
         card.face_down = (uint8_t)bo_boss_stay_flipped(run, &card);
         run->hand[run->hand_count++] = card;
+        drawn++;
     }
-    bo_run_sort_hand(run, run->sort_by_suit);
+    // Each draw_card sorts the hand; with no card drawn, nothing sorts it.
+    if (drawn > 0) bo_run_sort_hand(run, run->sort_by_suit);
 }
 
 // G.FUNCS.draw_from_deck_to_hand: fills the hand. The Serpent draws 3.

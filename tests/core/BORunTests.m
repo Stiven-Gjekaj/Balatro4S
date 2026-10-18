@@ -164,3 +164,17 @@ BO_TEST(test_run_discard_of_no_card_uses_no_discard) {
     BO_EQUAL_INT(run->discards_used, 0);
     free(run);
 }
+
+BO_TEST(test_run_full_hand_draws_nothing_and_keeps_its_order) {
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    bo_run_select_blind(run);
+    // Put the hand out of order, then make the hand smaller than it.
+    BOCard first = run->hand[0];
+    run->hand[0] = run->hand[run->hand_count - 1];
+    run->hand[run->hand_count - 1] = first;
+    run->hand_size = 5;
+    bo_run_fill_hand(run);
+    BO_EQUAL_INT(run->hand[run->hand_count - 1].uid, first.uid);
+    free(run);
+}

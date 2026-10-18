@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 (2026-10-18)
+
+- The shop: two cards for sale, the voucher, two packs, the reroll, and
+  Next Round. The cards of the shop come from the seed as in Balatro.
+- Buy a joker or a consumable. Sell a joker or a consumable for its sell
+  value.
+- All 150 jokers score as in Balatro 1.0.1o. A test plays 10000 random
+  hands in this code and in the code of Balatro, and all of them agree.
+- The jokers and the consumables show above the table. Tap a card to see
+  its name, its text, and its rarity. The text comes from the text file of
+  Balatro.
+- Drag a joker to put it in a new place.
+- Each joker shows its chips, mult, or money when it scores.
+- The vouchers and the packs show in the shop, but you cannot buy them yet.
+  The packs come in 0.4, and the vouchers come in 0.5.
+- The consumables cannot be used yet. They come in 0.4.
+- The editions show as a colour over the card until the shaders of 0.7.
+
 ## 0.2.0 (2026-10-18)
 
 - A full run with the Red Deck: the blind select, the Small, Big, and Boss

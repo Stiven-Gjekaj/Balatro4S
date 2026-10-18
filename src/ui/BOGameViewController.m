@@ -3,6 +3,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import "BOGameViewController.h"
 #include "bo_game.h"
+#include "bo_sound.h"
 
 // The view of the game is a CAEAGLLayer.
 @interface BOGLView : UIView
@@ -120,6 +121,7 @@
 - (void)setPaused:(BOOL)paused {
     _link.paused = paused;
     _last = 0;
+    bo_sound_set_active(!paused);
 }
 
 - (BOOL)prefersStatusBarHidden {

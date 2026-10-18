@@ -12,10 +12,10 @@ rm -rf "$APP"
 mkdir -p "$APP"
 
 # shellcheck disable=SC2046
-"$ROOT/build.sh" "$APP/Balatro4S" $DEBUG -I"$ROOT/src/core" -I"$ROOT/src/gfx" -I"$ROOT/src/game" -I"$ROOT/src/ui" \
-    $(ls "$ROOT"/src/core/*.c "$ROOT"/src/gfx/*.c "$ROOT"/src/gfx/*.m "$ROOT"/src/game/*.c "$ROOT"/src/ui/*.m 2>/dev/null) \
+"$ROOT/build.sh" "$APP/Balatro4S" $DEBUG -I"$ROOT/src/core" -I"$ROOT/src/gfx" -I"$ROOT/src/game" -I"$ROOT/src/ui" -I"$ROOT/src/audio" \
+    $(ls "$ROOT"/src/core/*.c "$ROOT"/src/gfx/*.c "$ROOT"/src/gfx/*.m "$ROOT"/src/game/*.c "$ROOT"/src/audio/*.m "$ROOT"/src/ui/*.m 2>/dev/null) \
     -lz -framework Foundation -framework UIKit -framework CoreGraphics -framework QuartzCore \
-    -framework OpenGLES -framework ImageIO -framework CoreText \
+    -framework OpenGLES -framework ImageIO -framework CoreText -framework AudioToolbox \
     2>&1 | grep -v 'liblaunch.dylib' >&2 || true
 [ -f "$APP/Balatro4S" ]
 

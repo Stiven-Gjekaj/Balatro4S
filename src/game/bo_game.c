@@ -30,6 +30,7 @@
 #include "bo_profile.h"
 #include "bo_save.h"
 #include "bo_score.h"
+#include "bo_sound.h"
 #include "bo_ui.h"
 #include "bo_voucher.h"
 #include "bo_zip.h"
@@ -644,6 +645,7 @@ int bo_game_start(const char *love_path, int width, int height) {
         return 0;
     }
     fprintf(stderr, "text: %s\n", G.text ? "loaded" : "missing");
+    bo_sound_start(love_path);
     fprintf(stderr, "start: %.2f s to load Balatro.love\n", wall_seconds() - startTime);
     G.run = calloc(1, sizeof(BORun));
     G.setupBack = BO_B_RED;

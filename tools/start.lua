@@ -65,6 +65,10 @@ return function(B, lines)
     print(string.format('blind_scaling %g interest %s per_hand %d per_discard %d',
         GAME.starting_params.ante_scaling, GAME.modifiers.no_interest and 'no' or 'yes',
         GAME.modifiers.money_per_hand or 1, GAME.modifiers.money_per_discard or 0))
+    -- get_blind_amount with the scaling of the stake, as Blind:set_blind.
+    local amount = get_blind_amount(GAME.round_resets.ante) * GAME.starting_params.ante_scaling
+    print(string.format('blinds %.17g %.17g %.17g', amount * G.P_BLINDS.bl_small.mult,
+        amount * G.P_BLINDS.bl_big.mult, amount * G.P_BLINDS[GAME.round_resets.blind_choices.Boss].mult))
     -- The top of the deck is the end of the list.
     local deck = {}
     for i = #G.deck.cards, 1, -1 do deck[#deck + 1] = card_text(G.deck.cards[i]) end

@@ -288,7 +288,7 @@ BACKS = ["b_red", "b_blue", "b_yellow", "b_green", "b_black", "b_magic", "b_nebu
 def start_scenario(rng):
     # A new run with a random deck and seed: tools/start.lua runs start_run.
     seed = "".join(rng.choice("123456789ABCDEFGHIJKLMNPQRSTUVWXYZ") for _ in range(8))
-    return "seed %s\nback %s\nstake 1\nstart\n" % (seed, rng.choice(BACKS))
+    return "seed %s\nback %s\nstake %d\nstart\n" % (seed, rng.choice(BACKS), rng.randint(1, 8))
 
 
 def run(command):

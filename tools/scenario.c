@@ -383,6 +383,8 @@ static int print_start(FILE *file, const char *seed) {
            run->spectral_rate, run->shop_joker_max);
     printf("blind_scaling %g interest %s per_hand %d per_discard %d\n", run->ante_scaling,
            run->no_interest ? "no" : "yes", run->money_per_hand, run->money_per_discard);
+    printf("blinds %.17g %.17g %.17g\n", bo_run_slot_chips(run, BO_SLOT_SMALL), bo_run_slot_chips(run, BO_SLOT_BIG),
+           bo_run_slot_chips(run, BO_SLOT_BOSS));
     // The top of the deck is the end of the list.
     printf("deck %d", run->deck_count);
     for (int i = run->deck_count - 1; i >= 0; i--) print_card(&run->deck[i]);

@@ -44,6 +44,31 @@ int bo_gfx_draw_calls(void);
 // Makes a texture from RGBA pixels with premultiplied alpha.
 BOTexture bo_gfx_texture(const unsigned char *rgba, int width, int height);
 
+// The shaders of the editions and the shines, as in Balatro.
+typedef enum {
+    BO_FX_FOIL,
+    BO_FX_HOLO,
+    BO_FX_POLYCHROME,
+    BO_FX_NEGATIVE,
+    BO_FX_NEGATIVE_SHINE,
+    BO_FX_VOUCHER,
+    BO_FX_BOOSTER,
+    BO_FX_COUNT,
+} BOShaderEffect;
+
+// Compiles the fragment shader of an effect from the LOVE source of
+// Balatro.love. name is the name of its vec2 uniform, as "foil". Returns 0
+// when it does not compile; the effect then draws nothing.
+int bo_gfx_load_effect(BOShaderEffect effect, const char *name, const char *source);
+
+// Draws one sprite with an effect: the cell (col, row) of an atlas of
+// columns x rows, into (x, y, w, h). value is the vec2 of the effect, and
+// time is the time of the game in seconds. The A5 cannot run these shaders
+// on each card in each frame, so each card with an effect goes into a cache
+// texture, and bo_gfx_begin draws one card of the cache again each frame.
+void bo_gfx_effect_sprite(BOShaderEffect effect, const BOTexture *texture, int columns, int rows, int col, int row,
+                          float x, float y, float w, float h, float value1, float value2, float time);
+
 BOColor bo_rgb(unsigned int hex);
 BOColor bo_rgba(unsigned int hex, float alpha);
 

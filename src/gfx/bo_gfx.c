@@ -3,6 +3,7 @@
 #include <OpenGLES/ES2/gl.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // One vertex: the position in pixels, the texture coordinate, and the
@@ -25,6 +26,9 @@ static GLuint gCurrentTexture;
 static BOTexture gCircle;
 static int gDrawCalls;
 static int gLastDrawCalls;
+static float gScreenW, gScreenH;
+static GLint gMainFramebuffer;
+static GLuint gVertexShaderObject;
 
 static const char *kVertexShader =
     "uniform vec2 screen;\n"
@@ -65,6 +69,7 @@ static GLuint compile(GLenum type, const char *source) {
 
 int bo_gfx_init(void) {
     GLuint vertex = compile(GL_VERTEX_SHADER, kVertexShader);
+    gVertexShaderObject = vertex;
     GLuint fragment = compile(GL_FRAGMENT_SHADER, kFragmentShader);
     if (!vertex || !fragment) return 0;
     gProgram = glCreateProgram();
@@ -122,9 +127,15 @@ int bo_gfx_init(void) {
     return 1;
 }
 
+static void refresh_effects(void);
+
 void bo_gfx_begin(int width, int height, BOColor clear) {
     gLastDrawCalls = gDrawCalls;
     gDrawCalls = 0;
+    gScreenW = (float)width;
+    gScreenH = (float)height;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &gMainFramebuffer);
+    refresh_effects();
     glViewport(0, 0, width, height);
     glUniform2f(gScreenUniform, (float)width, (float)height);
     glClearColor(clear.r, clear.g, clear.b, clear.a);
@@ -233,4 +244,272 @@ BOColor bo_rgb(unsigned int hex) {
 BOColor bo_rgba(unsigned int hex, float alpha) {
     BOColor color = {((hex >> 16) & 0xff) / 255.0f, ((hex >> 8) & 0xff) / 255.0f, (hex & 0xff) / 255.0f, alpha};
     return color;
+}
+
+// --- The effects ------------------------------------------------------------
+
+typedef struct {
+    GLuint program;
+    GLint screen, value, time, dissolve, textureDetails, imageDetails, shadow, burn1, burn2;
+} BOEffectProgram;
+
+static BOEffectProgram gEffects[BO_FX_COUNT];
+
+// The LOVE shader language over GLSL ES 1.0. Texel gives colours that are
+// not premultiplied, as LOVE does; main premultiplies the result again.
+static const char *kEffectHeader =
+    "precision highp float;\n"
+    "#define extern uniform\n"
+    "#define number float\n"
+    "#define Image sampler2D\n"
+    "varying mediump vec2 v_texcoord;\n"
+    "varying lowp vec4 v_color;\n"
+    "uniform sampler2D bo_texture;\n"
+    "vec4 bo_texel(sampler2D s, vec2 uv) {\n"
+    "    vec4 c = texture2D(s, uv);\n"
+    "    return c.a > 0.0 ? vec4(c.rgb / c.a, c.a) : vec4(0.0);\n"
+    "}\n"
+    "#define Texel bo_texel\n";
+
+static const char *kEffectMain =
+    "\nvoid main() {\n"
+    "    vec4 c = effect(v_color, bo_texture, v_texcoord, gl_FragCoord.xy);\n"
+    "    gl_FragColor = vec4(c.rgb * c.a, c.a) * v_color;\n"
+    "}\n";
+
+int bo_gfx_load_effect(BOShaderEffect effect, const char *name, const char *source) {
+    if (effect < 0 || effect >= BO_FX_COUNT || !source || !gVertexShaderObject) return 0;
+    size_t length = strlen(kEffectHeader) + strlen(source) + strlen(kEffectMain) + 1;
+    char *text = malloc(length);
+    if (!text) return 0;
+    snprintf(text, length, "%s%s%s", kEffectHeader, source, kEffectMain);
+    GLuint fragment = compile(GL_FRAGMENT_SHADER, text);
+    free(text);
+    if (!fragment) return 0;
+    GLuint program = glCreateProgram();
+    glAttachShader(program, gVertexShaderObject);
+    glAttachShader(program, fragment);
+    glBindAttribLocation(program, 0, "position");
+    glBindAttribLocation(program, 1, "texcoord");
+    glBindAttribLocation(program, 2, "color");
+    glLinkProgram(program);
+    GLint ok = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[512];
+        glGetProgramInfoLog(program, sizeof(log), NULL, log);
+        fprintf(stderr, "bo_gfx: effect %s: %s\n", name, log);
+        return 0;
+    }
+    BOEffectProgram *e = &gEffects[effect];
+    e->program = program;
+    glUseProgram(program);
+    glUniform1i(glGetUniformLocation(program, "bo_texture"), 0);
+    e->screen = glGetUniformLocation(program, "screen");
+    e->value = glGetUniformLocation(program, name);
+    e->time = glGetUniformLocation(program, "time");
+    e->dissolve = glGetUniformLocation(program, "dissolve");
+    e->textureDetails = glGetUniformLocation(program, "texture_details");
+    e->imageDetails = glGetUniformLocation(program, "image_details");
+    e->shadow = glGetUniformLocation(program, "shadow");
+    e->burn1 = glGetUniformLocation(program, "burn_colour_1");
+    e->burn2 = glGetUniformLocation(program, "burn_colour_2");
+    glUseProgram(gProgram);
+    return 1;
+}
+
+// The cache: one texture of 1024 x 1024. The top half has small slots for
+// the shines over a card, at half size. The bottom half has big slots for
+// the Negative cards, at full size, because they replace the card.
+enum {
+    CACHE_SIZE = 1024,
+    SMALL_W = 64, SMALL_H = 80, SMALL_COLUMNS = CACHE_SIZE / SMALL_W, SMALL_SLOTS = SMALL_COLUMNS * (512 / SMALL_H),
+    BIG_W = 128, BIG_H = 160, BIG_COLUMNS = CACHE_SIZE / BIG_W, BIG_SLOTS = BIG_COLUMNS * (512 / BIG_H),
+    MAX_ENTRIES = SMALL_SLOTS + BIG_SLOTS,
+};
+
+typedef struct {
+    int used;
+    GLuint texture;
+    int textureW, textureH, columns, rows, col, row;
+    BOShaderEffect effect;
+    int big, slot;
+    float renderW, renderH;
+    float value1, value2, time;
+    unsigned lastUsed;     // The frame of the last draw.
+    double renderedAt;     // The time of the last render.
+} BOCacheEntry;
+
+static GLuint gCacheFramebuffer, gCacheTexture;
+static BOCacheEntry gEntries[MAX_ENTRIES];
+static unsigned gFrame;
+static float gLastTime;
+
+static int cache_ready(void) {
+    if (gCacheFramebuffer) return 1;
+    unsigned char *empty = calloc(CACHE_SIZE * CACHE_SIZE, 4);
+    if (!empty) return 0;
+    BOTexture t = bo_gfx_texture(empty, CACHE_SIZE, CACHE_SIZE);
+    free(empty);
+    gCacheTexture = t.id;
+    glGenFramebuffers(1, &gCacheFramebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, gCacheFramebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gCacheTexture, 0);
+    int ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)gMainFramebuffer);
+    if (!ok) fprintf(stderr, "bo_gfx: the effect cache has no framebuffer\n");
+    return ok;
+}
+
+static void slot_origin(const BOCacheEntry *e, float *x, float *y) {
+    if (e->big) {
+        *x = (float)(e->slot % BIG_COLUMNS) * BIG_W;
+        *y = 512.0f + (float)(e->slot / BIG_COLUMNS) * BIG_H;
+    } else {
+        *x = (float)(e->slot % SMALL_COLUMNS) * SMALL_W;
+        *y = (float)(e->slot / SMALL_COLUMNS) * SMALL_H;
+    }
+}
+
+// Runs the shader of an entry into its slot.
+static void render_entry(BOCacheEntry *e) {
+    BOEffectProgram *p = &gEffects[e->effect];
+    bo_gfx_flush();
+    glBindFramebuffer(GL_FRAMEBUFFER, gCacheFramebuffer);
+    glViewport(0, 0, CACHE_SIZE, CACHE_SIZE);
+    float sx, sy;
+    slot_origin(e, &sx, &sy);
+    // Clear the slot. GL counts the rows from the bottom of the texture.
+    glEnable(GL_SCISSOR_TEST);
+    glScissor((GLint)sx, (GLint)(CACHE_SIZE - sy - (e->big ? BIG_H : SMALL_H)), e->big ? BIG_W : SMALL_W,
+              e->big ? BIG_H : SMALL_H);
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glUseProgram(p->program);
+    glUniform2f(p->screen, CACHE_SIZE, CACHE_SIZE);
+    glUniform2f(p->value, e->value1, e->value2);
+    glUniform1f(p->time, e->time);
+    glUniform1f(p->dissolve, 0);
+    float cw = e->textureW / (float)e->columns, ch = e->textureH / (float)e->rows;
+    // Sprite:get_pos_pixel and get_image_dims: the cell and the size of the
+    // atlas, so that the shader knows where the card is.
+    glUniform4f(p->textureDetails, (float)e->col, (float)e->row, cw, ch);
+    glUniform2f(p->imageDetails, (float)e->textureW, (float)e->textureH);
+    glUniform1i(p->shadow, 0);
+    glUniform4f(p->burn1, 0, 0, 0, 0);
+    glUniform4f(p->burn2, 0, 0, 0, 0);
+    BOTexture source = {e->texture, e->textureW, e->textureH};
+    BOColor white = {1, 1, 1, 1};
+    bo_gfx_sprite(&source, cw * e->col, ch * e->row, cw, ch, sx + 1, sy + 1, e->renderW, e->renderH, 0, white);
+    bo_gfx_flush();
+    glEnable(GL_BLEND);
+    glUseProgram(gProgram);
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)gMainFramebuffer);
+    glViewport(0, 0, (GLsizei)gScreenW, (GLsizei)gScreenH);
+    glUniform2f(gScreenUniform, gScreenW, gScreenH);
+    e->renderedAt = e->time;
+}
+
+// Each frame, the two cards that waited longest render again.
+static void refresh_effects(void) {
+    gFrame++;
+    for (int n = 0; n < 2; n++) {
+        BOCacheEntry *oldest = NULL;
+        for (int i = 0; i < MAX_ENTRIES; i++) {
+            BOCacheEntry *e = &gEntries[i];
+            if (!e->used || e->lastUsed + 1 < gFrame) continue;
+            if (!oldest || e->renderedAt < oldest->renderedAt) oldest = e;
+        }
+        if (!oldest || gLastTime - oldest->renderedAt < 1.0 / 30) return;
+        oldest->time = gLastTime;
+        render_entry(oldest);
+    }
+}
+
+static BOCacheEntry *find_entry(BOShaderEffect effect, const BOTexture *texture, int columns, int rows, int col,
+                                int row) {
+    for (int i = 0; i < MAX_ENTRIES; i++) {
+        BOCacheEntry *e = &gEntries[i];
+        if (e->used && e->effect == effect && e->texture == texture->id && e->columns == columns &&
+            e->rows == rows && e->col == col && e->row == row) {
+            return e;
+        }
+    }
+    return NULL;
+}
+
+// A free slot, or the slot that waited longest since its last draw.
+static BOCacheEntry *new_entry(int big) {
+    int slots = big ? BIG_SLOTS : SMALL_SLOTS;
+    uint8_t taken[SMALL_SLOTS];
+    memset(taken, 0, sizeof(taken));
+    BOCacheEntry *free_entry = NULL, *oldest = NULL;
+    for (int i = 0; i < MAX_ENTRIES; i++) {
+        BOCacheEntry *e = &gEntries[i];
+        if (!e->used) {
+            if (!free_entry) free_entry = e;
+            continue;
+        }
+        if (e->big != big) continue;
+        taken[e->slot] = 1;
+        if (!oldest || e->lastUsed < oldest->lastUsed) oldest = e;
+    }
+    for (int s = 0; s < slots; s++) {
+        if (!taken[s] && free_entry) {
+            memset(free_entry, 0, sizeof(*free_entry));
+            free_entry->used = 1;
+            free_entry->big = big;
+            free_entry->slot = s;
+            return free_entry;
+        }
+    }
+    if (!oldest) return NULL;
+    int slot = oldest->slot;
+    memset(oldest, 0, sizeof(*oldest));
+    oldest->used = 1;
+    oldest->big = big;
+    oldest->slot = slot;
+    return oldest;
+}
+
+void bo_gfx_effect_sprite(BOShaderEffect effect, const BOTexture *texture, int columns, int rows, int col, int row,
+                          float x, float y, float w, float h, float value1, float value2, float time) {
+    if (effect < 0 || effect >= BO_FX_COUNT || !texture || !texture->id || !gEffects[effect].program) return;
+    if (!cache_ready()) return;
+    gLastTime = time;
+    BOCacheEntry *e = find_entry(effect, texture, columns, rows, col, row);
+    if (!e) {
+        int big = effect == BO_FX_NEGATIVE;
+        e = new_entry(big);
+        if (!e) return;
+        e->effect = effect;
+        e->texture = texture->id;
+        e->textureW = texture->width;
+        e->textureH = texture->height;
+        e->columns = columns;
+        e->rows = rows;
+        e->col = col;
+        e->row = row;
+        // A shine renders at half size; a Negative card at full size.
+        float scale = big ? 1.0f : 0.5f;
+        float maxW = (big ? BIG_W : SMALL_W) - 2, maxH = (big ? BIG_H : SMALL_H) - 2;
+        e->renderW = w * scale < maxW ? w * scale : maxW;
+        e->renderH = h * scale < maxH ? h * scale : maxH;
+        e->value1 = value1;
+        e->value2 = value2;
+        e->time = time;
+        render_entry(e);
+    }
+    e->lastUsed = gFrame;
+    e->value1 = value1;
+    e->value2 = value2;
+    float sx, sy;
+    slot_origin(e, &sx, &sy);
+    // The slot rows are upside down in the texture: v counts from the bottom.
+    float u0 = (sx + 1) / CACHE_SIZE, u1 = (sx + 1 + e->renderW) / CACHE_SIZE;
+    float v0 = 1 - (sy + 1) / CACHE_SIZE, v1 = 1 - (sy + 1 + e->renderH) / CACHE_SIZE;
+    BOColor white = {1, 1, 1, 1};
+    push(gCacheTexture, u0, v0, u1, v1, x, y, w, h, 0, white);
 }

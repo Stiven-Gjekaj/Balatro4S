@@ -34,6 +34,15 @@ BO_TEST(test_run_shuffles_the_deck_as_balatro_does) {
     free(run);
 }
 
+BO_TEST(test_run_first_ancient_suit_can_be_spades) {
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    // start_run clears the suit of Ancient Joker before its first pick, so
+    // the pick has the four suits. Balatro picks Spades for this seed.
+    BO_EQUAL_INT(run->ancient_suit, BO_SPADES);
+    free(run);
+}
+
 BO_TEST(test_run_beats_a_blind_and_cashes_out) {
     BORun *run = calloc(1, sizeof(BORun));
     bo_run_start(run, "ABCDEFGH");

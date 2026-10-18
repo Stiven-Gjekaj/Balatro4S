@@ -157,7 +157,7 @@ static void reset_round_cards(BORun *run) {
         run->mail_rank = valid[bo_random_index(&run->random, bo_pseudoseed(&run->random, key), validCount)]->rank;
     }
     static const int suits[4] = {BO_SPADES, BO_HEARTS, BO_CLUBS, BO_DIAMONDS};
-    int ancient[3], ancientCount = 0;
+    int ancient[4], ancientCount = 0;
     for (int i = 0; i < 4; i++) {
         if (suits[i] != run->ancient_suit) ancient[ancientCount++] = suits[i];
     }
@@ -202,7 +202,9 @@ void bo_run_start(BORun *run, const char *seed) {
     run->temp_reroll_cost = -1;
     run->last_hand_played = BO_HAND_NONE;
     run->most_played_hand = BO_HAND_HIGH_CARD;
-    run->ancient_suit = BO_SPADES;
+    // start_run sets ancient_card.suit to nil, so the first pick has the
+    // four suits.
+    run->ancient_suit = -1;
     run->used_packs[0] = run->used_packs[1] = BO_CENTER_NONE;
     bo_score_context_init(&run->context);
     for (int i = 0; i < BO_HAND_COUNT; i++) {

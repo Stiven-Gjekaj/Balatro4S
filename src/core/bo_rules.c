@@ -145,6 +145,28 @@ void bo_rules_change_hand_size(BORun *run, int delta) {
     }
 }
 
+void bo_rules_set_debuff(BORun *run, BOItem *item, int in_jokers, int debuff) {
+    // A perished joker stays debuffed.
+    if (item->perishable && item->perish_tally <= 0) {
+        if (!item->debuffed) {
+            item->debuffed = 1;
+            if (in_jokers) bo_joker_remove_from_deck(run, item);
+        }
+        return;
+    }
+    if (debuff == item->debuffed) return;
+    // A debuffed joker leaves the deck: its hand size, its slots, and its
+    // other effects go away until the debuff ends.
+    if (in_jokers) {
+        if (debuff) {
+            bo_joker_remove_from_deck(run, item);
+        } else {
+            bo_joker_add_to_deck(run, item);
+        }
+    }
+    item->debuffed = (uint8_t)debuff;
+}
+
 void bo_rules_ease_discard(BORun *run, int delta) {
     // ease_discard: the discards left never go below 0.
     if (delta < -run->discards_left) delta = -run->discards_left;

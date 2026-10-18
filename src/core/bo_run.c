@@ -325,7 +325,7 @@ static void end_round(BORun *run) {
         if (joker->rental) bo_run_ease_dollars(run, -3);
         if (joker->perishable && joker->perish_tally > 0) {
             joker->perish_tally--;
-            if (joker->perish_tally == 0) joker->debuffed = 1;
+            if (joker->perish_tally == 0) bo_rules_set_debuff(run, joker, 1, 1);
         }
     }
     const BOBlindInfo *blind = bo_blind_info(run->blind);
@@ -766,7 +766,8 @@ void bo_run_add_consumable(BORun *run, const BOItem *item) {
 void bo_run_remove_joker(BORun *run, int index) {
     if (index < 0 || index >= run->joker_count) return;
     BOItem removed = run->jokers[index];
-    bo_joker_remove_from_deck(run, &run->jokers[index]);
+    // A debuffed joker already left the deck.
+    if (!removed.debuffed) bo_joker_remove_from_deck(run, &run->jokers[index]);
     memmove(&run->jokers[index], &run->jokers[index + 1], sizeof(BOItem) * (run->joker_count - index - 1));
     run->joker_count--;
     bo_run_forget_card(run, removed.center);

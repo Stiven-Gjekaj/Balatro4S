@@ -113,3 +113,20 @@ BO_TEST(test_joker_leaves_no_negative_discards) {
     BO_EQUAL_INT(run->discards_left, 0);
     free(run);
 }
+
+BO_TEST(test_joker_perished_juggler_gives_back_its_hand_size) {
+    BORun *run = make_run("ABCDEFGH", 10, 4);
+    add_joker(run, BO_J_JUGGLER, BO_EDITION_NONE);
+    BO_EQUAL_INT(run->hand_size, 9);
+    BOItem *juggler = &run->jokers[0];
+    juggler->perishable = 1;
+    juggler->perish_tally = 0;
+    // set_debuff of a perished joker takes it out of the deck.
+    bo_rules_set_debuff(run, juggler, 1, 0);
+    BO_EXPECT(juggler->debuffed);
+    BO_EQUAL_INT(run->hand_size, 8);
+    // Its sale does not take the hand size a second time.
+    bo_run_remove_joker(run, 0);
+    BO_EQUAL_INT(run->hand_size, 8);
+    free(run);
+}

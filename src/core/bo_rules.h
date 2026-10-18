@@ -46,6 +46,10 @@ int bo_rules_count_rank(const struct BORun *run, int rank);
 // G.hand:change_size. While the hand is on, a bigger hand draws cards.
 void bo_rules_change_hand_size(struct BORun *run, int delta);
 
+// Card:set_debuff for a joker or a consumable. in_jokers is 1 for a card
+// in the joker slots, which leaves the deck while it is debuffed.
+void bo_rules_set_debuff(struct BORun *run, BOItem *item, int in_jokers, int debuff);
+
 // ease_discard: changes the discards left, but not below 0.
 void bo_rules_ease_discard(struct BORun *run, int delta);
 

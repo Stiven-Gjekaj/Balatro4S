@@ -129,6 +129,7 @@ static struct {
     BOTexture vouchers;  // Vouchers.png.
     BOTexture boosters;  // boosters.png.
     BOTexture tags;      // tags.png.
+    int effects;         // The shaders of the editions compiled.
     BOLuaValue *text;    // localization/en-us.lua.
 
     BORun *run;
@@ -355,6 +356,24 @@ int bo_game_start(const char *love_path, int width, int height) {
     int fontLoaded = font && bo_font_load(font, fontSize, 48);
     free(font);
 
+    // The shaders of the editions and the shines, from Balatro.love.
+    static const struct {
+        BOShaderEffect effect;
+        const char *name;
+    } kEffects[] = {{BO_FX_FOIL, "foil"}, {BO_FX_HOLO, "holo"}, {BO_FX_POLYCHROME, "polychrome"},
+                    {BO_FX_NEGATIVE, "negative"}, {BO_FX_NEGATIVE_SHINE, "negative_shine"},
+                    {BO_FX_VOUCHER, "voucher"}, {BO_FX_BOOSTER, "booster"}};
+    int loaded = 0;
+    for (size_t i = 0; i < sizeof(kEffects) / sizeof(kEffects[0]); i++) {
+        char path[96];
+        snprintf(path, sizeof(path), "resources/shaders/%s.fs", kEffects[i].name);
+        char *source = (char *)bo_zip_read(zip, path, NULL);
+        if (source && bo_gfx_load_effect(kEffects[i].effect, kEffects[i].name, source)) loaded++;
+        free(source);
+    }
+    G.effects = loaded == (int)(sizeof(kEffects) / sizeof(kEffects[0]));
+    fprintf(stderr, "effects: %d compiled\n", loaded);
+
     char *text = (char *)bo_zip_read(zip, "localization/en-us.lua", NULL);
     if (text) {
         G.text = bo_luatab_parse(text);
@@ -408,6 +427,49 @@ static void draw_edition(int edition, float x, float y, float w, float h) {
     }
 }
 
+// One sprite of a card: the cell (col, row) of an atlas of columns x rows.
+typedef struct {
+    const BOTexture *texture;
+    int columns, rows, col, row;
+} BOLayer;
+
+static void draw_layer(const BOLayer *l, float x, float y, float w, float h) {
+    draw_cell(l->texture, l->columns, l->rows, l->col, l->row, x, y, w, h, bo_rgb(BO_C_WHITE));
+}
+
+static void effect_layer(BOShaderEffect effect, const BOLayer *l, float x, float y, float w, float h) {
+    // Card:draw sends (time / 28, time) to the shader.
+    float t = (float)G.time;
+    bo_gfx_effect_sprite(effect, l->texture, l->columns, l->rows, l->col, l->row, x, y, w, h, t / 28, t, t);
+}
+
+// The base layers of a card with its edition, as Card:draw: a Negative card
+// draws with its shader, and the other editions draw over the card.
+static void draw_with_edition(const BOLayer *layers, int count, int edition, int shine, float x, float y, float w,
+                              float h) {
+    if (!G.effects) {
+        for (int i = 0; i < count; i++) draw_layer(&layers[i], x, y, w, h);
+        draw_edition(edition, x, y, w, h);
+        return;
+    }
+    for (int i = 0; i < count; i++) {
+        if (edition == BO_EDITION_NEGATIVE) {
+            effect_layer(BO_FX_NEGATIVE, &layers[i], x, y, w, h);
+        } else {
+            draw_layer(&layers[i], x, y, w, h);
+        }
+    }
+    if (shine >= 0) effect_layer((BOShaderEffect)shine, &layers[0], x, y, w, h);
+    BOShaderEffect over = BO_FX_COUNT;
+    if (edition == BO_EDITION_HOLO) over = BO_FX_HOLO;
+    if (edition == BO_EDITION_FOIL) over = BO_FX_FOIL;
+    if (edition == BO_EDITION_POLYCHROME) over = BO_FX_POLYCHROME;
+    if (over != BO_FX_COUNT) {
+        for (int i = 0; i < count; i++) effect_layer(over, &layers[i], x, y, w, h);
+    }
+    if (edition == BO_EDITION_NEGATIVE) effect_layer(BO_FX_NEGATIVE_SHINE, &layers[0], x, y, w, h);
+}
+
 static void draw_shadow(float x, float y, float w, float h) {
     bo_gfx_round_rect(x + G.cardW * 0.04f, y + G.cardH * 0.04f, w, h, G.cardW * 0.06f, bo_rgba(0x000000, 0.25f));
 }
@@ -421,14 +483,16 @@ static void draw_playing_card(const BOCard *card, float x, float y, float w, flo
     }
     const BOCenterInfo *center = bo_center(bo_rules_enhancement_center(card->enhancement));
     BOColor white = bo_rgb(BO_C_WHITE);
-    draw_cell(&G.centers, 7, 5, center->pos_x, center->pos_y, x, y, w, h, white);
-    if (!bo_card_is_stone(card)) {
-        draw_cell(&G.deck, 13, 4, card->rank - 2, deck_row(card->suit), x, y, w, h, white);
-    }
-    // The seals of shared_seals in game.lua.
+    BOLayer layers[2] = {{&G.centers, 7, 5, center->pos_x, center->pos_y},
+                         {&G.deck, 13, 4, card->rank - 2, deck_row(card->suit)}};
+    draw_with_edition(layers, bo_card_is_stone(card) ? 1 : 2, card->edition, -1, x, y, w, h);
+    // The seals of shared_seals in game.lua. The Gold Seal shines.
     static const int sealPos[5][2] = {{-1, -1}, {2, 0}, {5, 4}, {6, 4}, {4, 4}};
-    if (card->seal) draw_cell(&G.centers, 7, 5, sealPos[card->seal][0], sealPos[card->seal][1], x, y, w, h, white);
-    draw_edition(card->edition, x, y, w, h);
+    if (card->seal) {
+        BOLayer seal = {&G.centers, 7, 5, sealPos[card->seal][0], sealPos[card->seal][1]};
+        draw_cell(&G.centers, 7, 5, seal.col, seal.row, x, y, w, h, white);
+        if (card->seal == BO_SEAL_GOLD && G.effects) effect_layer(BO_FX_VOUCHER, &seal, x, y, w, h);
+    }
     if (card->debuffed) bo_gfx_round_rect(x, y, w, h, w * 0.06f, bo_rgba(0x000000, 0.45f));
 }
 
@@ -447,22 +511,33 @@ static void draw_item(const BOItem *item, float x, float y, float w, float h) {
         return;
     }
     BOColor white = bo_rgb(BO_C_WHITE);
+    BOLayer layer = {NULL, 1, 1, c->pos_x, c->pos_y};
+    int shine = -1;
     switch (c->set) {
-    case BO_SET_JOKER:
-        draw_cell(&G.jokers, 10, 16, c->pos_x, c->pos_y, x, y, w, h, white);
-        if (c->soul_x >= 0) draw_cell(&G.jokers, 10, 16, c->soul_x, c->soul_y, x, y - h * 0.02f, w, h, white);
-        break;
+    case BO_SET_JOKER: layer = (BOLayer){&G.jokers, 10, 16, c->pos_x, c->pos_y}; break;
     case BO_SET_TAROT:
     case BO_SET_PLANET:
     case BO_SET_SPECTRAL:
-        draw_cell(&G.tarots, 10, 6, c->pos_x, c->pos_y, x, y, w, h, white);
-        if (c->soul_x >= 0) draw_cell(&G.tarots, 10, 6, c->soul_x, c->soul_y, x, y, w, h, white);
+        layer = (BOLayer){&G.tarots, 10, 6, c->pos_x, c->pos_y};
+        // The Spectral cards and The Soul shine as the vouchers do.
+        if (c->set == BO_SET_SPECTRAL) shine = BO_FX_BOOSTER;
         break;
-    case BO_SET_VOUCHER: draw_cell(&G.vouchers, 9, 4, c->pos_x, c->pos_y, x, y, w, h, white); break;
-    case BO_SET_BOOSTER: draw_cell(&G.boosters, 4, 9, c->pos_x, c->pos_y, x, y, w, h, white); break;
+    case BO_SET_VOUCHER:
+        layer = (BOLayer){&G.vouchers, 9, 4, c->pos_x, c->pos_y};
+        shine = BO_FX_VOUCHER;
+        break;
+    case BO_SET_BOOSTER:
+        layer = (BOLayer){&G.boosters, 4, 9, c->pos_x, c->pos_y};
+        shine = BO_FX_BOOSTER;
+        break;
     default: break;
     }
-    draw_edition(item->edition, x, y, w, h);
+    if (layer.texture) draw_with_edition(&layer, 1, item->edition, shine, x, y, w, h);
+    // The soul of a legendary joker and of The Soul floats over the card.
+    if (c->soul_x >= 0 && layer.texture) {
+        float bob = sinf((float)G.time * 2) * h * 0.02f;
+        draw_cell(layer.texture, layer.columns, layer.rows, c->soul_x, c->soul_y, x, y - h * 0.02f + bob, w, h, white);
+    }
     if (item->debuffed) bo_gfx_round_rect(x, y, w, h, w * 0.06f, bo_rgba(0x000000, 0.45f));
     if (item->eternal || item->perishable || item->rental) {
         const char *label = item->eternal ? "Eternal" : item->perishable ? "Perishable" : "Rental";

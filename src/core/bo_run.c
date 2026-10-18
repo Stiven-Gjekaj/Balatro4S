@@ -8,6 +8,7 @@
 #include "bo_consume.h"
 #include "bo_eval.h"
 #include "bo_joker.h"
+#include "bo_pack.h"
 #include "bo_pool.h"
 #include "bo_rules.h"
 
@@ -672,6 +673,25 @@ int bo_run_sell_joker(BORun *run, int index) {
 
 int bo_run_sell_consumable(BORun *run, int index) {
     return sell_item(run, run->consumables, &run->consumable_count, index);
+}
+
+int bo_run_open_pack(BORun *run, int index) {
+    if (run->state != BO_STATE_SHOP || index < 0 || index >= run->shop_pack_count) return 0;
+    BOItem pack = run->shop_packs[index];
+    if (pack.cost > bo_run_spendable(run) && pack.cost > 0) return 0;
+    // The pack leaves its slot. Its place in used_packs becomes USED.
+    for (int i = 0, seen = 0; i < 2; i++) {
+        if (run->used_packs[i] == BO_CENTER_NONE) continue;
+        if (seen++ == index) {
+            run->used_packs[i] = BO_CENTER_NONE;
+            break;
+        }
+    }
+    memmove(&run->shop_packs[index], &run->shop_packs[index + 1],
+            sizeof(BOItem) * (run->shop_pack_count - index - 1));
+    run->shop_pack_count--;
+    bo_run_forget_card(run, pack.center);
+    return bo_pack_open(run, pack.center, pack.cost);
 }
 
 int bo_run_can_use_consumable(const BORun *run, int index, uint64_t highlighted) {

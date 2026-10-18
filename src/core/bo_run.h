@@ -182,6 +182,7 @@ typedef struct BORun {
     BOShopCard pack_cards[5];
     int pack_count;
     int pack_choices;        // G.GAME.pack_choices.
+    int pending_hallucinations;  // Tarot cards of Hallucination that wait.
     BORunState pack_return;  // G.GAME.PACK_INTERRUPT.
 
     // The tags that wait (G.GAME.tags).
@@ -222,6 +223,8 @@ int bo_run_buy(BORun *run, int index);
 // Sells joker index. Returns 0 when the joker is eternal.
 int bo_run_sell_joker(BORun *run, int index);
 int bo_run_sell_consumable(BORun *run, int index);
+// Buys and opens shop pack index. See bo_pack.h for the open pack.
+int bo_run_open_pack(BORun *run, int index);
 // Uses consumable index on the cards of the hand that highlighted selects.
 // Returns 0 when the card cannot be used now.
 int bo_run_use_consumable(BORun *run, int index, uint64_t highlighted);

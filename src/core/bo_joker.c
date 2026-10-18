@@ -245,8 +245,10 @@ static BOEffect calculate(BORun *run, BOItem *self, BOContext *ctx) {
             char key[24];
             snprintf(key, sizeof(key), "halu%d", run->ante);
             if (bo_pseudorandom(&run->random, key) < run->probabilities / A->extra) {
+                // The Tarot card comes in an event after the cards of the
+                // pack. bo_pack_open makes it.
                 run->consumeable_buffer++;
-                make_consumable(run, BO_SET_TAROT, "hal");
+                run->pending_hallucinations++;
             }
         }
         return none();

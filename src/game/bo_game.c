@@ -62,6 +62,9 @@ enum {
     BO_ID_REROLL_BOSS,
     BO_ID_SKIP_BLIND,
     BO_ID_RUN_INFO,
+    BO_ID_SETUP_PREV,  // The run setup: the deck before this one.
+    BO_ID_SETUP_NEXT,
+    BO_ID_SETUP_PLAY,
     BO_ID_BACKGROUND,  // A tap on nothing: the focus goes away.
     BO_ID_HAND_CARD = 100,
     BO_ID_JOKER = 200,
@@ -164,6 +167,8 @@ static struct {
     BOFocusArea focus;
     int focusIndex;
     int showInfo;  // The Run Info screen is open.
+    int setup;              // The run setup is open: the choice of the deck.
+    BOCenterId setupBack;   // The deck of the next run.
     float blindTagX[2], blindTagY[2];  // The tags of the blind select.
 
     // A drag of a joker.
@@ -341,7 +346,7 @@ static void new_run(void) {
     // Here the time of the clock gives the number.
     char seed[9];
     bo_random_string((double)time(NULL) * 0.33411983 + fmod(G.time, 1000) * 0.412311010, seed);
-    bo_run_start(G.run, seed);
+    bo_run_start_deck(G.run, seed, G.setupBack ? G.setupBack : BO_B_RED, 1);
     G.handCount = 0;
     G.playCount = 0;
     G.jokerViewCount = 0;
@@ -354,7 +359,7 @@ static void new_run(void) {
     bo_motion_place(&G.multBox, 0, 0, 0);
     G.endless = 0;
     G.focus = BO_FOCUS_NONE;
-    fprintf(stderr, "new run: seed %s\n", seed);
+    fprintf(stderr, "new run: seed %s, %s\n", seed, bo_center(G.run->back)->key);
 }
 
 int bo_game_start(const char *love_path, int width, int height) {
@@ -429,6 +434,8 @@ int bo_game_start(const char *love_path, int width, int height) {
     }
     fprintf(stderr, "text: %s\n", G.text ? "loaded" : "missing");
     G.run = calloc(1, sizeof(BORun));
+    G.setupBack = BO_B_RED;
+    G.setup = 1;
     new_run();
     return 1;
 }
@@ -1406,10 +1413,64 @@ static void draw_end(int won) {
         }
         if (bo_ui_button(BO_ID_NEW_RUN, bo_rect(inner.x + inner.w / 2 - 8 - bw, by, bw, bh), BO_C_BLUE, "New Run",
                          1)) {
-            new_run();
+            G.setup = 1;
         }
     } else if (bo_ui_button(BO_ID_NEW_RUN, bo_rect(inner.x + (inner.w - bw) / 2, by, bw, bh), BO_C_BLUE, "New Run",
                             1)) {
+        G.setup = 1;
+    }
+}
+
+// --- The run setup ---------------------------------------------------------
+
+// The setup of a new run, as the New Run screen of Balatro: the deck, its
+// text, and the Play button.
+static void draw_setup(void) {
+    BORect box = bo_rect(G.width * 0.08f, G.height * 0.05f, G.width * 0.84f, G.height * 0.9f);
+    bo_gfx_round_rect(box.x + 3, box.y + 5, box.w, box.h, 12, bo_rgba(0x000000, 0.35f));
+    bo_ui_box(box, BO_C_BLACK);
+    BORect inner = bo_rect(box.x + 8, box.y + 8, box.w - 16, box.h - 16);
+    bo_ui_box(inner, BO_C_DARK);
+    bo_font_draw("New Run", inner.x + inner.w / 2, inner.y + G.height * 0.02f, G.height * 0.08f,
+                 bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    // The deck, between the two arrows.
+    float cw = G.cardW * 1.5f, ch = G.cardH * 1.5f;
+    float cx = inner.x + inner.w * 0.24f - cw / 2, cy = inner.y + G.height * 0.17f;
+    const BOCenterInfo *back = bo_center(G.setupBack);
+    draw_shadow(cx, cy, cw, ch);
+    draw_cell(&G.centers, 7, 5, back->pos_x, back->pos_y, cx, cy, cw, ch, bo_rgb(BO_C_WHITE));
+    float aw = G.width * 0.06f, ah = ch * 0.4f;
+    if (bo_ui_button(BO_ID_SETUP_PREV, bo_rect(cx - aw - 14, cy + (ch - ah) / 2, aw, ah), BO_C_RED, "<", 1)) {
+        G.setupBack = G.setupBack == BO_B_RED ? BO_B_ERRATIC : G.setupBack - 1;
+    }
+    if (bo_ui_button(BO_ID_SETUP_NEXT, bo_rect(cx + cw + 14, cy + (ch - ah) / 2, aw, ah), BO_C_RED, ">", 1)) {
+        G.setupBack = G.setupBack == BO_B_ERRATIC ? BO_B_RED : G.setupBack + 1;
+    }
+    char text[16];
+    snprintf(text, sizeof(text), "%d/15", G.setupBack - BO_B_RED + 1);
+    bo_font_draw(text, cx + cw / 2, cy + ch + 10, G.height * 0.04f, bo_rgb(BO_C_GREY), BO_ALIGN_CENTER);
+    // The name and the text of the deck.
+    BOItem item;
+    memset(&item, 0, sizeof(item));
+    item.center = G.setupBack;
+    BODescription d;
+    bo_describe_item(NULL, &item, &d);
+    float tx = inner.x + inner.w * 0.47f, tw = inner.w * 0.49f;
+    float line = G.height * 0.045f, pad = 10;
+    BORect nameBox = bo_rect(tx, cy, tw, G.height * 0.08f);
+    bo_ui_box(nameBox, BO_C_L_BLACK);
+    bo_font_draw(d.name, tx + tw / 2, cy + G.height * 0.01f, G.height * 0.065f, bo_rgb(BO_C_WHITE),
+                 BO_ALIGN_CENTER);
+    BORect body = bo_rect(tx, cy + nameBox.h + pad, tw, d.line_count * line * 1.2f + pad * 2);
+    bo_ui_box(body, BO_C_WHITE);
+    for (int i = 0; i < d.line_count; i++) {
+        bo_rich_draw(d.lines[i], tx + tw / 2, body.y + pad + i * line * 1.2f, line, bo_rgb(BO_C_TEXT_DARK),
+                     BO_ALIGN_CENTER);
+    }
+    float bw = inner.w * 0.34f, bh = G.height * 0.11f;
+    if (bo_ui_button(BO_ID_SETUP_PLAY, bo_rect(inner.x + (inner.w - bw) / 2, inner.y + inner.h - bh - 14, bw, bh),
+                     BO_C_BLUE, "Play", 1)) {
+        G.setup = 0;
         new_run();
     }
 }
@@ -1964,6 +2025,12 @@ void bo_game_frame(double dt) {
     bo_gfx_set_background((float)G.time, G.backSpinTime, G.backC, G.backL, G.backD, G.backContrast, G.backSpin);
     bo_gfx_begin(G.width, G.height, bo_rgb(0x3a5c4f));
     shake_room();
+    if (G.setup) {
+        draw_setup();
+        bo_gfx_flush();
+        bo_ui_end();
+        return;
+    }
     // A tap on the table takes the focus away.
     bo_ui_area(BO_ID_BACKGROUND, bo_rect(0, 0, G.width, G.height));
     draw_panel();
@@ -2044,6 +2111,15 @@ void bo_game_debug(const char *line) {
             bo_voucher_apply(G.run, center);
         }
         fprintf(stderr, "debug: voucher %s\n", word);
+    } else if (sscanf(line, "deck %63s", word) == 1) {
+        // A new run with this deck.
+        BOCenterId center = bo_center_by_key(word);
+        if (center != BO_CENTER_NONE && bo_center(center)->set == BO_SET_BACK) {
+            G.setupBack = center;
+            G.setup = 0;
+            new_run();
+        }
+        fprintf(stderr, "debug: deck %s\n", word);
     } else if (sscanf(line, "pack %63s", word) == 1) {
         BOCenterId center = bo_center_by_key(word);
         if (center != BO_CENTER_NONE && G.run->state == BO_STATE_SHOP) {

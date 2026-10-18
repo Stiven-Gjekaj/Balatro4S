@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bo_consume.h"
 #include "bo_eval.h"
 #include "bo_joker.h"
 #include "bo_pool.h"
@@ -176,6 +177,9 @@ void bo_run_start(BORun *run, const char *seed) {
     run->shop_joker_max = 2;
     run->starting_deck_size = 52;
     run->voucher = BO_CENTER_NONE;
+    run->last_tarot_planet = BO_CENTER_NONE;
+    run->ecto_minus = 1;
+    run->pack = BO_CENTER_NONE;
     run->last_hand_played = BO_HAND_NONE;
     run->most_played_hand = BO_HAND_HIGH_CARD;
     run->ancient_suit = BO_SPADES;
@@ -668,6 +672,28 @@ int bo_run_sell_joker(BORun *run, int index) {
 
 int bo_run_sell_consumable(BORun *run, int index) {
     return sell_item(run, run->consumables, &run->consumable_count, index);
+}
+
+int bo_run_can_use_consumable(const BORun *run, int index, uint64_t highlighted) {
+    if (index < 0 || index >= run->consumable_count) return 0;
+    const BOItem *item = &run->consumables[index];
+    if (!bo_consume_can_use(run, item, highlighted, BO_USE_FROM_CONSUMABLES)) return 0;
+    // Card:check_use: Ankh needs a free joker slot.
+    return !(item->center == BO_C_ANKH && run->joker_count >= run->joker_slots);
+}
+
+int bo_run_use_consumable(BORun *run, int index, uint64_t highlighted) {
+    if (!bo_run_can_use_consumable(run, index, highlighted)) return 0;
+    BOItem item = run->consumables[index];
+    // The card leaves its area, then it acts, then it dissolves.
+    memmove(&run->consumables[index], &run->consumables[index + 1],
+            sizeof(BOItem) * (run->consumable_count - index - 1));
+    run->consumable_count--;
+    bo_consume_use(run, &item, highlighted);
+    bo_joker_remove_from_deck(run, &item);
+    forget_card(run, item.center);
+    remove_marked_jokers(run);
+    return 1;
 }
 
 void bo_run_end_shop(BORun *run) {

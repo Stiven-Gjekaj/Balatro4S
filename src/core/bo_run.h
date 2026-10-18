@@ -25,6 +25,7 @@ typedef enum {
     BO_STATE_ROUND_EVAL,  // The blind is beaten. The cash out waits.
     BO_STATE_SHOP,
     BO_STATE_GAME_OVER,
+    BO_STATE_PACK,        // A booster pack is open.
 } BORunState;
 
 typedef enum {
@@ -106,6 +107,8 @@ typedef struct BORun {
     int idol_rank, idol_suit;  // The Idol.
     int mail_rank;             // Mail-In Rebate.
     int ancient_suit;          // Ancient Joker.
+    BOCenterId last_tarot_planet;  // The Fool makes this card.
+    int ecto_minus;            // The hand size that the next Ectoplasm takes.
     int castle_suit;           // Castle.
     BOHandType most_played_hand;
     BOHandType last_hand_played;
@@ -174,6 +177,13 @@ typedef struct BORun {
     BOCenterId used_packs[2];  // current_round.used_packs, BO_CENTER_NONE for USED.
     int used_packs_set;
 
+    // The open booster pack (BO_STATE_PACK).
+    BOCenterId pack;
+    BOShopCard pack_cards[5];
+    int pack_count;
+    int pack_choices;        // G.GAME.pack_choices.
+    BORunState pack_return;  // G.GAME.PACK_INTERRUPT.
+
     // The tags that wait (G.GAME.tags).
     BOCenterId tags[32];
     int tag_count;
@@ -212,6 +222,11 @@ int bo_run_buy(BORun *run, int index);
 // Sells joker index. Returns 0 when the joker is eternal.
 int bo_run_sell_joker(BORun *run, int index);
 int bo_run_sell_consumable(BORun *run, int index);
+// Uses consumable index on the cards of the hand that highlighted selects.
+// Returns 0 when the card cannot be used now.
+int bo_run_use_consumable(BORun *run, int index, uint64_t highlighted);
+// can_use_consumeable and check_use of consumable index.
+int bo_run_can_use_consumable(const BORun *run, int index, uint64_t highlighted);
 // Leaves the shop and goes to the next blind select.
 void bo_run_end_shop(BORun *run);
 // Moves joker from to the place to, as a drag on the screen does.

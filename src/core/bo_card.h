@@ -59,7 +59,7 @@ typedef struct {
     uint8_t seal;
     uint8_t debuffed;
     int16_t perma_bonus;  // The chips that Hiker adds for the rest of the run.
-    uint32_t uid;         // The order of creation, as unique_val in Balatro.
+    uint32_t uid;         // The order of creation. Balatro keeps it as unique_val.
 } BOCard;
 
 BOCard bo_card_make(int rank, BOSuit suit);
@@ -67,8 +67,10 @@ BOCard bo_card_make(int rank, BOSuit suit);
 // The chips of the rank: 2 to 10, 10 for a face card, and 11 for an Ace.
 int bo_card_nominal(const BOCard *card);
 
-// The value that get_highest compares: the nominal, then the face, then
-// the suit, then the order of creation.
+// get_nominal: the value that get_highest and the sort of the hand
+// compare. It is the nominal, then the face, then the suit, then the order
+// of creation. With by_suit, the suit comes first, as for "suit desc".
+double bo_card_nominal_key(const BOCard *card, int by_suit);
 double bo_card_highest_key(const BOCard *card);
 
 int bo_card_is_stone(const BOCard *card);

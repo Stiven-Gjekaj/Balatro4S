@@ -13,13 +13,20 @@ int bo_card_nominal(const BOCard *card) {
     return card->rank;
 }
 
-double bo_card_highest_key(const BOCard *card) {
+double bo_card_nominal_key(const BOCard *card, int by_suit) {
     static const double kSuitNominal[BO_SUIT_COUNT] = {0.04, 0.03, 0.02, 0.01};
-    double face = card->rank > 10 ? (card->rank - 10) * 0.1 : 0;
-    double suit = kSuitNominal[card->suit];
+    static const double kFaceNominal[5] = {0, 0.1, 0.2, 0.3, 0.4};
+    double face = card->rank > 10 && card->rank <= BO_ACE ? kFaceNominal[card->rank - 10] : 0;
+    double mult = by_suit ? 1000 : 1;
     // Get_nominal puts a Stone card under all other cards.
-    if (bo_card_is_stone(card)) suit = -1000 * suit;
-    return bo_card_nominal(card) + suit + face + 0.000001 * card->uid;
+    if (bo_card_is_stone(card)) mult = -1000;
+    // Balatro sets unique_val to 1 - ID / 1603301, so a newer card is lower.
+    double unique = 1 - card->uid / 1603301.0;
+    return bo_card_nominal(card) + kSuitNominal[card->suit] * mult + face + 0.000001 * unique;
+}
+
+double bo_card_highest_key(const BOCard *card) {
+    return bo_card_nominal_key(card, 0);
 }
 
 int bo_card_is_stone(const BOCard *card) {

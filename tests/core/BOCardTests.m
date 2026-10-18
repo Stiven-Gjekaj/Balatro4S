@@ -44,3 +44,15 @@ BO_TEST(test_card_has_a_short_name) {
     BO_EQUAL(@(bo_card_name(&ace, name)), @"AS");
     BO_EQUAL(@(bo_card_name(&ten, name)), @"TD");
 }
+
+BO_TEST(test_card_sorts_by_suit_before_rank_for_a_suit_sort) {
+    BOCard twoS = bo_card_make(2, BO_SPADES);
+    BOCard aceH = bo_card_make(BO_ACE, BO_HEARTS);
+    BO_EXPECT(bo_card_nominal_key(&aceH, 0) > bo_card_nominal_key(&twoS, 0));
+    BO_EXPECT(bo_card_nominal_key(&twoS, 1) > bo_card_nominal_key(&aceH, 1));
+    // Two cards with the same rank and suit: the older card is higher.
+    BOCard old = bo_card_make(9, BO_CLUBS), young = bo_card_make(9, BO_CLUBS);
+    old.uid = 1;
+    young.uid = 2;
+    BO_EXPECT(bo_card_nominal_key(&old, 0) > bo_card_nominal_key(&young, 0));
+}

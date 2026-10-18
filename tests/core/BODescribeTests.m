@@ -136,3 +136,22 @@ BO_TEST(test_describe_writes_the_text_of_a_deck) {
     bo_describe_set_text(NULL);
     bo_luatab_free(text);
 }
+
+BO_TEST(test_describe_writes_the_condition_of_a_locked_deck) {
+    BOLuaValue *text = bo_luatab_parse(
+        "return { descriptions = {\n"
+        "  Other = { deck_locked_win = { name = 'Locked', text = { 'Win a run with', '{C:attention}#1#{}' } },\n"
+        "            deck_locked_stake = { name = 'Locked', text = { 'on at least', '{V:1}#1#{} difficulty' } } },\n"
+        "  Back = { b_red = { name = 'Red Deck', text = {} } },\n"
+        "  Stake = { stake_green = { name = 'Green Stake', text = {} } } },\n"
+        "  misc = { dictionary = { k_unknown = 'Unknown' } } }");
+    bo_describe_set_text(text);
+    BODescription d;
+    BO_EXPECT(bo_describe_locked_back(BO_B_MAGIC, &d));
+    BO_EQUAL(@(d.name), @"Locked");
+    BO_EQUAL(@(d.lines[1]), @"{C:attention}Red Deck{}");
+    BO_EXPECT(bo_describe_locked_back(BO_B_PAINTED, &d));
+    BO_EQUAL(@(d.lines[1]), @"{V:1}Green Stake{} difficulty");
+    bo_describe_set_text(NULL);
+    bo_luatab_free(text);
+}

@@ -37,6 +37,9 @@ int bo_describe_tag(const struct BORun *run, int tag, int orbital_hand, BODescri
 // A word of the dictionary of misc, as "k_mult", or the key itself.
 const char *bo_describe_word(const char *key);
 
+// The text of a locked deck, as Back:generate_UI: the unlock condition.
+int bo_describe_locked_back(int back, BODescription *out);
+
 // The value of a description variable as Lua writes a number.
 void bo_describe_number(double value, char *out, int size);
 

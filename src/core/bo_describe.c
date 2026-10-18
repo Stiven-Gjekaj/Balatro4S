@@ -1,3 +1,4 @@
+#include "bo_profile.h"
 #include "bo_describe.h"
 
 #include <math.h>
@@ -471,6 +472,57 @@ int bo_describe_tag(const BORun *run, int tag, int orbital_hand, BODescription *
     case BO_TAG_ECONOMY: var_number(&vars, bo_center_number(c, BO_F_MAX, NULL)); break;
     default: break;
     }
+    BOLuaValue *text = bo_luatab_get(entry, "text");
+    int lines = bo_luatab_length(text);
+    for (int i = 0; i < lines && out->line_count < BO_DESCRIBE_LINES; i++) {
+        BOLuaValue *line = bo_luatab_item(text, i);
+        if (!line || line->type != BO_LUA_STRING) continue;
+        fill_line(line->string, &vars, out->lines[out->line_count++], BO_DESCRIBE_LINE_LENGTH);
+    }
+    return 1;
+}
+
+// The name of a deck or a stake from the text, as localize name_text.
+static const char *text_name(const char *set, const char *key, const char *fallback) {
+    char path[128];
+    snprintf(path, sizeof(path), "descriptions.%s.%s.name", set, key);
+    const char *name = gText ? bo_luatab_string(gText, path) : NULL;
+    return name ? name : fallback;
+}
+
+int bo_describe_locked_back(int back, BODescription *out) {
+    memset(out, 0, sizeof(*out));
+    const BOCenterInfo *c = bo_center((BOCenterId)back);
+    if (!c || !c->unlock_type) return 0;
+    BOVars vars;
+    memset(&vars, 0, sizeof(vars));
+    const char *key;
+    static const char *stakeKeys[8] = {"stake_white", "stake_red", "stake_green", "stake_black",
+                                        "stake_blue", "stake_purple", "stake_orange", "stake_gold"};
+    if (strcmp(c->unlock_type, "win_deck") == 0) {
+        BOCenterId other = bo_center_by_key(c->unlock_text);
+        // The name of the other deck shows only when it is unlocked.
+        var_text(&vars, bo_profile_unlocked(other) ? text_name("Back", c->unlock_text, bo_center(other)->name)
+                                                   : bo_describe_word("k_unknown"));
+        key = "deck_locked_win";
+    } else if (strcmp(c->unlock_type, "discover_amount") == 0) {
+        var_number(&vars, c->unlock_number);
+        key = "deck_locked_discover";
+    } else if (strcmp(c->unlock_type, "win_stake") == 0) {
+        int stake = (int)c->unlock_number;
+        var_text(&vars, text_name("Stake", stakeKeys[stake >= 1 && stake <= 8 ? stake - 1 : 0], "Stake"));
+        key = "deck_locked_stake";
+    } else {
+        return 0;
+    }
+    snprintf(out->name, sizeof(out->name), "%s", "Locked");
+    if (!gText) return 0;
+    char path[128];
+    snprintf(path, sizeof(path), "descriptions.Other.%s", key);
+    BOLuaValue *entry = bo_luatab_path(gText, path);
+    if (!entry) return 0;
+    const char *name = bo_luatab_string(entry, "name");
+    if (name) snprintf(out->name, sizeof(out->name), "%s", name);
     BOLuaValue *text = bo_luatab_get(entry, "text");
     int lines = bo_luatab_length(text);
     for (int i = 0; i < lines && out->line_count < BO_DESCRIBE_LINES; i++) {

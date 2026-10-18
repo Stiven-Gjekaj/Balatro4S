@@ -32,7 +32,11 @@
     view.multipleTouchEnabled = NO;
     view.contentScaleFactor = [UIScreen mainScreen].scale;
     CAEAGLLayer *layer = (CAEAGLLayer *)view.layer;
-    layer.opaque = YES;
+    // A layer that is not opaque goes through the compositor of iOS 6, so
+    // that RecTunnelX can read it from the framebuffer. An opaque layer
+    // goes to the screen by itself, and the capture is black. The frame
+    // rate stays at 60.
+    layer.opaque = NO;
     layer.drawableProperties = @{kEAGLDrawablePropertyRetainedBacking: @NO,
                                  kEAGLDrawablePropertyColorFormat: kEAGLColorFormatRGBA8};
     self.view = view;

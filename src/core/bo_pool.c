@@ -2,6 +2,7 @@
 // poll_edition, create_card, create_card_for_shop, get_next_voucher_key,
 // get_next_tag_key, and get_pack of Balatro 1.0.1o.
 
+#include "bo_profile.h"
 #include "bo_pool.h"
 
 #include <stdio.h>
@@ -56,8 +57,11 @@ int bo_pool_build(const BORun *run, int type, int rarity, BOCenterId *pool, int 
         if (type == BO_SET_ENHANCED) {
             add = 1;
         } else if (type == BO_SET_TAG) {
-            add = c->min_ante == 0 || c->min_ante <= run->ante;
-        } else if (!owned_or_shown(run, (BOCenterId)i)) {
+            // A tag that requires a card needs the card in the collection.
+            const char *requires = bo_center_text(c, BO_F_REQUIRES);
+            add = (!requires || bo_profile_discovered(bo_center_by_key(requires))) &&
+                  (c->min_ante == 0 || c->min_ante <= run->ante);
+        } else if (!owned_or_shown(run, (BOCenterId)i) && (bo_profile_unlocked((BOCenterId)i) || c->rarity == 4)) {
             if (c->set == BO_SET_VOUCHER) {
                 if (!run->used_vouchers[i]) {
                     int include = 1;

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "bo_pool.h"
 #include "bo_profile.h"
 #include "bo_rules.h"
 
@@ -111,21 +112,21 @@ BO_TEST(test_profile_modify_deck_counts_the_cards_of_the_run) {
 BO_TEST(test_profile_discoveries_unlock_the_blue_deck) {
     BOProfile *p = new_profile();
     BORun *run = new_run(BO_B_RED, 1);
-    // The Joker and the Red Deck start discovered: 18 more make 20.
-    int found = 0;
-    for (int i = 0; i < BO_CENTER_COUNT && found < 18; i++) {
+    // The run start discovers the deck and its two blind tags. Each Tarot
+    // card then adds one, and the 20th discovery unlocks the Blue Deck.
+    int total;
+    bo_profile_discover_tallies(p, &total, NULL, NULL, NULL);
+    for (int i = 0; i < BO_CENTER_COUNT && total < 20; i++) {
         if (bo_center((BOCenterId)i)->set != BO_SET_TAROT || p->discovered[i]) continue;
+        BO_EXPECT(!p->unlocked[BO_B_BLUE]);
         bo_profile_discover(run, (BOCenterId)i);
-        found++;
+        bo_profile_discover_tallies(p, &total, NULL, NULL, NULL);
     }
-    int total, tarots;
-    bo_profile_discover_tallies(p, &total, NULL, &tarots, NULL);
-    // The 20th discovery unlocks the Blue Deck, and unlock_card discovers
-    // a deck, so the tally is 21.
-    BO_EQUAL_INT(total, 21);
-    BO_EQUAL_INT(tarots, 18);
     BO_EXPECT(p->unlocked[BO_B_BLUE]);
+    // unlock_card discovers a deck, so the tally is 21.
     BO_EXPECT(p->discovered[BO_B_BLUE]);
+    bo_profile_discover_tallies(p, &total, NULL, NULL, NULL);
+    BO_EQUAL_INT(total, 21);
     BO_EXPECT(!p->unlocked[BO_J_CARTOMANCER]);
     done(p, run);
 }
@@ -148,4 +149,18 @@ BO_TEST(test_profile_file_reads_back_and_refuses_a_bad_file) {
     remove(path);
     free(p);
     free(loaded);
+}
+
+BO_TEST(test_profile_shop_has_no_locked_joker) {
+    BOProfile *p = new_profile();
+    BORun *run = new_run(BO_B_RED, 1);
+    int jokers = 0;
+    for (int i = 0; i < 200; i++) {
+        BOShopCard card = bo_pool_create_shop_card(run);
+        if (card.is_playing_card || bo_center(card.item.center)->set != BO_SET_JOKER) continue;
+        jokers++;
+        BO_EXPECT(p->unlocked[card.item.center]);
+    }
+    BO_EXPECT(jokers > 50);
+    done(p, run);
 }

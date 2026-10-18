@@ -1,7 +1,8 @@
 -- oracle.lua: runs functions of the original Balatro in LuaJIT, and prints
 -- the results. The tests of Balatro4S hold these results as numbers.
 -- It reads the Lua files of your own Balatro.love. It does not copy them.
--- Usage: luajit tools/oracle.lua DIR COMMAND [ARGS]
+-- Usage: tools/oracle.sh COMMAND [ARGS], or with any LuaJIT of Balatro:
+--        oracle-host tools/oracle.lua DIR COMMAND [ARGS]
 --   DIR is a directory with the unpacked Balatro.love.
 --   rng SEED KEY N        print N values of pseudoseed(KEY) for SEED
 --   hash TEXT             print pseudohash(TEXT)

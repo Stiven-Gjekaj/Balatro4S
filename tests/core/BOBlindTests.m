@@ -1,5 +1,5 @@
 // Tests of bo_blind. The bosses come from get_new_boss of Balatro 1.0.1o
-// in LuaJIT, with tools/oracle.lua.
+// in the LuaJIT of Balatro.app, with tools/oracle.sh.
 
 #import "BOTest.h"
 #include "bo_blind.h"

@@ -1,5 +1,5 @@
 // Tests of bo_run. The orders of the deck come from the shuffle of Balatro
-// 1.0.1o in LuaJIT, with tools/oracle.lua.
+// 1.0.1o in the LuaJIT of Balatro.app, with tools/oracle.sh.
 
 #import "BOTest.h"
 #include <string.h>

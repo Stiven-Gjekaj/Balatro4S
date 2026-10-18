@@ -1616,6 +1616,13 @@ void bo_game_debug(const char *line) {
             }
         }
         fprintf(stderr, "debug: joker %s\n", word);
+    } else if (sscanf(line, "pack %63s", word) == 1) {
+        BOCenterId center = bo_center_by_key(word);
+        if (center != BO_CENTER_NONE && G.run->state == BO_STATE_SHOP) {
+            bo_pack_open(G.run, center, 0);
+            sync_hand();
+        }
+        fprintf(stderr, "debug: pack %s\n", word);
     } else {
         fprintf(stderr, "debug: unknown command: %s", line);
     }

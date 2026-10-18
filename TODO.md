@@ -68,14 +68,6 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 - Add the animations: deal, draw, play, score, and the shake of a card.
 - Add the moving background of the original.
 
-## 0.7.1: sound and video
-
-- Decode the sounds from Ogg Vorbis on the phone, and play them. This needs
-  a Vorbis decoder, as stb_vorbis, in the repository.
-- Play the 5 music tracks, with the changes between the shop, the packs, and the blinds.
-- Record videos of the game with a screen recorder from Cydia. RecordMyScreen
-  is on the phone. A person must start it with a tap.
-
 ## 0.8: progress (done, 2026-10-18)
 
 - Port the 15 decks.
@@ -92,7 +84,15 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 - Add the endless mode after ante 8.
 - Measure the speed and the memory on the A5, and fix each slow screen.
 
+## 0.10: sound (done, 2026-10-18)
+
+- Decode the sounds from Ogg Vorbis on the phone, and play them. stb_vorbis
+  is in `src/third_party`.
+- Play the 5 music tracks, with the changes between the shop, the packs, and the blinds.
+
 ## 1.0.0
 
 - Compare all the content with Balatro 1.0.1o, and fix each difference.
+- Record videos of the game with a screen recorder from Cydia. RecordMyScreen
+  is on the phone. A person must start it with a tap.
 - Publish the release on GitHub with the .deb, and add it to the Cydia repository.

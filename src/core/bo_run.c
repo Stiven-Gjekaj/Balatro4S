@@ -507,6 +507,8 @@ int bo_run_play(BORun *run, uint64_t mask, BOScore *score) {
 
 void bo_run_discard_cards(BORun *run, uint64_t mask, int hook) {
     int count = count_bits(mask, run->hand_count);
+    // discard_cards_from_highlighted does nothing with no card.
+    if (count == 0) return;
     BOCard cards[BO_MAX_HAND];
     for (int i = 0; i < run->hand_count + run->deck_count + run->discard_count; i++) {
         if (i < run->hand_count) run->hand[i].forced_selection = 0;

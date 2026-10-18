@@ -153,3 +153,14 @@ BO_TEST(test_run_a_bigger_hand_draws_while_the_hand_is_on) {
     BO_EQUAL_INT(run->hand_count, 10);
     free(run);
 }
+
+BO_TEST(test_run_discard_of_no_card_uses_no_discard) {
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    bo_run_select_blind(run);
+    int before = run->discards_left;
+    bo_run_discard_cards(run, 0, 0);
+    BO_EQUAL_INT(run->discards_left, before);
+    BO_EQUAL_INT(run->discards_used, 0);
+    free(run);
+}

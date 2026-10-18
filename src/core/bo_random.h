@@ -59,4 +59,8 @@ int bo_random_index(BORandom *random, double seed, int count);
 // order gets the new order as indices from 0.
 void bo_pseudoshuffle(BORandom *random, double seed, int *order, int count);
 
+// random_string(8, seed): a seed for a new run, for example "7LB2WVPK".
+// It has the digits 1 to 9 and the letters A to Z without O.
+void bo_random_string(double seed, char out[9]);
+
 #endif

@@ -1,5 +1,5 @@
 // Tests of bo_random. The expected numbers come from the functions of
-// Balatro 1.0.1o in LuaJIT 2.1, with tools/oracle.lua.
+// Balatro 1.0.1o in the LuaJIT of Balatro.app, with tools/oracle.sh.
 
 #import "BOTest.h"
 #include <math.h>
@@ -41,4 +41,12 @@ BO_TEST(test_random_shuffles_as_pseudoshuffle) {
     // Balatro gives 10 9 7 8 1 4 3 5 2 6 for the values 1 to 10.
     int expected[10] = {9, 8, 6, 7, 0, 3, 2, 4, 1, 5};
     for (int i = 0; i < 10; i++) BO_EQUAL_INT(order[i], expected[i]);
+}
+
+BO_TEST(test_random_makes_the_seed_string_of_balatro) {
+    char seed[9];
+    bo_random_string(0.25, seed);
+    BO_EQUAL(@(seed), @"2LDSPH9V");
+    bo_random_string(123.456, seed);
+    BO_EQUAL(@(seed), @"P3NQ83U4");
 }

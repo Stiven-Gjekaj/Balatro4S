@@ -131,3 +131,19 @@ void bo_pseudoshuffle(BORandom *random, double seed, int *order, int count) {
         order[j - 1] = t;
     }
 }
+
+void bo_random_string(double seed, char out[9]) {
+    BOLuaRandom state;
+    bo_lua_randomseed(&state, seed);
+    for (int i = 0; i < 8; i++) {
+        // The order of the calls is the order of the "and" and "or" of Lua.
+        if (bo_lua_random(&state) > 0.7) {
+            out[i] = (char)bo_lua_random_int(&state, '1', '9');
+        } else if (bo_lua_random(&state) > 0.45) {
+            out[i] = (char)bo_lua_random_int(&state, 'A', 'N');
+        } else {
+            out[i] = (char)bo_lua_random_int(&state, 'P', 'Z');
+        }
+    }
+    out[8] = 0;
+}

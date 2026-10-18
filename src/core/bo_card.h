@@ -68,6 +68,7 @@ typedef struct {
     uint8_t face_down;         // A boss blind turned the card.
     uint8_t played_this_ante;  // For The Pillar.
     uint8_t forced_selection;  // Cerulean Bell.
+    uint16_t times_played;     // base.times_played: the plays of the card in this run.
 } BOCard;
 
 BOCard bo_card_make(int rank, BOSuit suit);

@@ -11,6 +11,7 @@
 #include "bo_pool.h"
 #include "bo_joker.h"
 #include "bo_pack.h"
+#include "bo_voucher.h"
 #include "bo_rules.h"
 #include "bo_run.h"
 
@@ -261,6 +262,32 @@ static void open_pack(BORun *run, BOCenterId center, const PackStep *steps, int 
     print_state(run);
 }
 
+// Buys a voucher in a new shop, and prints the state of the run.
+static void redeem(BORun *run, BOCenterId center) {
+    run->state = BO_STATE_SHOP;
+    run->shop_count = 0;
+    for (int i = 0; i < 2; i++) run->shop[run->shop_count++] = bo_pool_create_shop_card(run);
+    run->shop_voucher = bo_pool_make_item(run, center);
+    run->has_shop_voucher = 1;
+    bo_voucher_redeem(run);
+    printf("dollars %d\n", run->dollars);
+    printf("ante %d\n", run->ante);
+    printf("rates %.17g %.17g %.17g %.17g\n", run->tarot_rate, run->planet_rate, run->edition_rate,
+           run->playing_card_rate);
+    printf("discount %d\n", run->discount_percent);
+    printf("interest_cap %d\n", run->interest_cap);
+    printf("hands %d %d\n", run->hands_per_round, run->hands_left);
+    printf("discards %d %d\n", run->discards_per_round, run->discards_left);
+    printf("reroll %d %d\n", run->reroll_cost_base, run->reroll_cost);
+    printf("slots %d %d %d\n", run->joker_slots, run->consumable_slots, run->hand_size > 0 ? run->hand_size : 0);
+    printf("shop %d", run->shop_joker_max);
+    for (int i = 0; i < run->shop_count; i++) printf(" %s:%d", bo_center(run->shop[i].item.center)->key, run->shop[i].item.cost);
+    printf("\n");
+    printf("costs");
+    for (int i = 0; i < run->joker_count; i++) printf(" %d/%d", run->jokers[i].cost, run->jokers[i].sell_cost);
+    printf("\n");
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: scenario FILE\n");
@@ -293,7 +320,7 @@ int main(int argc, char **argv) {
     run->ancient_suit = BO_SPADES;
     run->castle_suit = BO_SPADES;
 
-    BOCenterId useCenter = BO_CENTER_NONE, packCenter = BO_CENTER_NONE;
+    BOCenterId useCenter = BO_CENTER_NONE, packCenter = BO_CENTER_NONE, redeemCenter = BO_CENTER_NONE;
     PackStep steps[MAX_STEPS];
     int stepCount = 0;
     uint64_t useMask = 0;
@@ -352,6 +379,8 @@ int main(int argc, char **argv) {
                 parse_card(run, words[i], &run->deck[0]);
                 run->deck_count++;
             }
+        } else if (strcmp(key, "redeem") == 0) {
+            redeemCenter = bo_center_by_key(words[1]);
         } else if (strcmp(key, "open") == 0) {
             packCenter = bo_center_by_key(words[1]);
         } else if ((strcmp(key, "choose") == 0 || strcmp(key, "skip") == 0) && stepCount < MAX_STEPS) {
@@ -372,6 +401,10 @@ int main(int argc, char **argv) {
         }
     }
     fclose(file);
+    if (redeemCenter != BO_CENTER_NONE) {
+        redeem(run, redeemCenter);
+        return 0;
+    }
     if (packCenter != BO_CENTER_NONE) {
         open_pack(run, packCenter, steps, stepCount);
         return 0;

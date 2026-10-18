@@ -3,10 +3,11 @@
 (tools/oracle.sh score) and with Balatro4S (build/fuzz/scenario), and
 prints each scenario where the results are not the same.
 
-Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--pack] [--keep]
+Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--pack] [--voucher] [--keep]
 With --use, each scenario uses a Tarot, Planet, or Spectral card on the hand
 in place of a play. With --pack, each scenario opens a booster pack in the
-shop and takes some of its cards.
+shop and takes some of its cards. With --voucher, each scenario buys a
+voucher in the shop.
 """
 
 import os
@@ -134,6 +135,32 @@ def pack_scenario(rng, jokers, consumables, packs):
     return "\n".join(lines) + "\n"
 
 
+def all_vouchers():
+    keys = []
+    with open(os.path.join(ROOT, "src", "core", "bo_data.c")) as f:
+        for line in f:
+            m = re.match(r'\s*\{"(v_[a-z0-9_]+)"', line)
+            if m:
+                keys.append(m.group(1))
+    return keys
+
+
+def voucher_scenario(rng, jokers, vouchers):
+    lines = ["seed " + "".join(rng.choice("ABCDEFGHJKLMNPQRSTUVWXYZ123456789") for _ in range(8))]
+    lines.append("ante %d" % rng.randint(1, 8))
+    # Enough money for the voucher: the test is the effect, not the price.
+    lines.append("dollars %d" % rng.randint(20, 60))
+    lines.append("hands_left %d" % rng.randint(1, 4))
+    lines.append("discards_left %d" % rng.randint(0, 4))
+    for key in rng.sample(jokers, rng.randint(0, 4)):
+        words = ["joker", key]
+        if rng.random() < 0.2:
+            words.append("edition=" + rng.choice(EDITIONS + ["negative"]))
+        lines.append(" ".join(words))
+    lines.append("redeem " + rng.choice(vouchers))
+    return "\n".join(lines) + "\n"
+
+
 def card(rng, plain=False):
     token = rng.choice(SUITS) + "_" + rng.choice(RANKS)
     if plain:
@@ -216,7 +243,9 @@ def main():
                     if f.endswith(".c")] + ["-lz", "-o", os.path.join(OUT, "scenario")], check=True)
     failures = 0
     for i in range(count):
-        if "--pack" in sys.argv:
+        if "--voucher" in sys.argv:
+            text = voucher_scenario(rng, jokers, all_vouchers())
+        elif "--pack" in sys.argv:
             text = pack_scenario(rng, jokers, consumables, packs)
         elif "--use" in sys.argv:
             text = use_scenario(rng, jokers, consumables)

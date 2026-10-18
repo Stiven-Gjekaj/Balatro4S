@@ -29,6 +29,7 @@
 --   open p_key            (open a pack in the shop, in place of a play)
 --   choose 2 1 3          (take pack card 2, with cards 1 and 3 of the hand)
 --   skip                  (close the pack)
+--   redeem v_key          (buy a voucher in the shop, in place of a play)
 -- A card is a key of P_CARDS, then an enhancement, an edition, and a seal.
 
 local dir, file = arg[1], arg[3]
@@ -52,6 +53,11 @@ G.GAME.pseudorandom.seed = seed
 G.GAME.pseudorandom.hashed_seed = pseudohash(seed)
 G.GAME.selected_back = Back(G.P_CENTERS.b_red)
 G.GAME.dollars = 4
+-- The round values of start_run with the Red Deck, as in tools/scenario.c.
+G.GAME.round_resets.hands = 4
+G.GAME.round_resets.discards = 4
+G.GAME.round_resets.reroll_cost = 5
+G.GAME.current_round.reroll_cost = 5
 local function area(name, limit, kind)
     G[name] = CardArea(0, 0, 1, 1, {card_limit = limit, type = kind})
 end
@@ -98,7 +104,7 @@ local function set_ability(card, words)
     end
 end
 
-local plays, holds, use, pack = {}, {}, nil, nil
+local plays, holds, use, pack, redeem = {}, {}, nil, nil, nil
 for _, w in ipairs(lines) do
     local key = w[1]
     if key == 'ante' then G.GAME.round_resets.ante = tonumber(w[2])
@@ -137,6 +143,7 @@ for _, w in ipairs(lines) do
     elseif key == 'deck_cards' then
         for i = 2, #w do G.deck:emplace(playing_card(w[i])) end
     elseif key == 'open' then pack = {key = w[2], steps = {}}
+    elseif key == 'redeem' then redeem = w[2]
     elseif key == 'choose' or key == 'skip' then
         local step = {kind = key, picks = {}}
         for i = 3, #w do step.picks[#step.picks + 1] = tonumber(w[i]) end
@@ -212,6 +219,43 @@ local function headless_use()
     G.STAGE = G.STAGES.RUN
     Card.update_alert = function() end
     get_joker_win_sticker = function() return nil end
+end
+
+if redeem then
+    -- A voucher in the shop, as Card:redeem does it.
+    headless_use()
+    G.STATE = G.STATES.SHOP
+    G.SPEEDFACTOR = 1
+    DynaText.pop_out = function() end
+    local any = setmetatable({}, {__index = function(t) return t end, __call = function(t) return t end})
+    G.hand_text_area = {ante = {config = {object = {update = function() end}}}}
+    G.GAME.shop = {joker_max = 2}
+    G.shop_jokers = CardArea(0, 0, 1, 1, {card_limit = 2, type = 'shop'})
+    G.shop = setmetatable({}, {__index = function() return function() end end})
+    create_shop_card_ui = function() end
+    for i = 1, 2 do G.shop_jokers:emplace(create_card_for_shop(G.shop_jokers)) end
+    local card = Card(0, 0, 1, 1, nil, G.P_CENTERS[redeem])
+    card.shop_voucher = true
+    card:redeem()
+    B.manager:run_all()
+    print('dollars ' .. G.GAME.dollars)
+    print('ante ' .. G.GAME.round_resets.ante)
+    print(string.format('rates %.17g %.17g %.17g %.17g', G.GAME.tarot_rate, G.GAME.planet_rate,
+                        G.GAME.edition_rate, G.GAME.playing_card_rate))
+    print('discount ' .. G.GAME.discount_percent)
+    print('interest_cap ' .. G.GAME.interest_cap)
+    print('hands ' .. G.GAME.round_resets.hands .. ' ' .. G.GAME.current_round.hands_left)
+    print('discards ' .. G.GAME.round_resets.discards .. ' ' .. G.GAME.current_round.discards_left)
+    print('reroll ' .. G.GAME.round_resets.reroll_cost .. ' ' .. G.GAME.current_round.reroll_cost)
+    print('slots ' .. G.jokers.config.card_limit .. ' ' .. G.consumeables.config.card_limit .. ' ' ..
+          G.hand.config.card_limit)
+    local shop = {}
+    for _, c in ipairs(G.shop_jokers.cards) do shop[#shop + 1] = ' ' .. c.config.center.key .. ':' .. c.cost end
+    print('shop ' .. G.GAME.shop.joker_max .. table.concat(shop))
+    local costs = {}
+    for _, j in ipairs(G.jokers.cards) do costs[#costs + 1] = ' ' .. j.cost .. '/' .. j.sell_cost end
+    print('costs' .. table.concat(costs))
+    os.exit(0)
 end
 
 if pack then

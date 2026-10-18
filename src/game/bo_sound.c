@@ -72,6 +72,9 @@ void bo_sound_start(const char *love_path) {
 }
 
 void bo_sound_play(const char *code, float per, float vol) {
+#ifdef BO_DEBUG
+    fprintf(stderr, "sound: %s %.2f %.2f\n", code, per, vol);
+#endif
     if (gMixer) bo_mixer_play(gMixer, code, per, vol);
 }
 

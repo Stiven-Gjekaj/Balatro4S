@@ -2996,6 +2996,9 @@ static void modulate_music(double dt) {
     // The music slows to half speed at a game over.
     int over = run && !G.setup && run->state == BO_STATE_GAME_OVER;
     G.pitchMod = G.pitchMod * (float)(1 - dt) + (float)dt * (over ? 0.5f : 1);
+    static const char *last;
+    if (track != last) fprintf(stderr, "music: %s\n", track);
+    last = track;
     bo_sound_modulate((float)dt, track, G.pitchMod);
 }
 

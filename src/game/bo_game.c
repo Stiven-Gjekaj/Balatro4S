@@ -86,6 +86,12 @@ enum {
     BO_ID_SPEED_PREV,
     BO_ID_SPEED_NEXT,
     BO_ID_SHAKE,
+    BO_ID_VOLUME_PREV,  // The three volumes: a pair of buttons for each.
+    BO_ID_VOLUME_NEXT,
+    BO_ID_MUSIC_PREV,
+    BO_ID_MUSIC_NEXT,
+    BO_ID_SOUNDS_PREV,
+    BO_ID_SOUNDS_NEXT,
     BO_ID_INFO_SETTINGS,  // Run Info: open the settings.
     BO_ID_CHALLENGES,     // The run setup: open the challenges.
     BO_ID_CH_CLOSE,
@@ -220,6 +226,7 @@ static struct {
     int challengeSel;       // The challenge that shows its rules.
     int speedIndex;         // G.SETTINGS.GAMESPEED: 0.5, 1, 2, or 4.
     int shake;              // The screen shakes.
+    int volumes[3];         // G.SETTINGS.SOUND: volume, music_volume, game_sounds_volume.
     char settingsPath[1024];
     int colTab, colPage, colFocus;  // The tab, the page, and the card that shows its text.
     float blindTagX[2], blindTagY[2];  // The tags of the blind select.
@@ -516,8 +523,14 @@ static float game_speed(void) {
 static void load_settings(void) {
     G.speedIndex = 1;
     G.shake = 1;
+    G.volumes[0] = 50;
+    G.volumes[1] = 100;
+    G.volumes[2] = 100;
     FILE *file = G.settingsPath[0] ? fopen(G.settingsPath, "r") : NULL;
-    if (!file) return;
+    if (!file) {
+        bo_sound_set_volumes(G.volumes[0], G.volumes[1], G.volumes[2]);
+        return;
+    }
     char line[64];
     while (fgets(line, sizeof(line), file)) {
         float speed;
@@ -528,14 +541,22 @@ static void load_settings(void) {
             }
         }
         if (sscanf(line, "shake %d", &shake) == 1) G.shake = shake != 0;
+        int a, b, c;
+        if (sscanf(line, "volume %d %d %d", &a, &b, &c) == 3) {
+            G.volumes[0] = a < 0 ? 0 : a > 100 ? 100 : a;
+            G.volumes[1] = b < 0 ? 0 : b > 100 ? 100 : b;
+            G.volumes[2] = c < 0 ? 0 : c > 100 ? 100 : c;
+        }
     }
     fclose(file);
+    bo_sound_set_volumes(G.volumes[0], G.volumes[1], G.volumes[2]);
 }
 
 static void save_settings(void) {
     FILE *file = G.settingsPath[0] ? fopen(G.settingsPath, "w") : NULL;
     if (!file) return;
-    fprintf(file, "speed %g\nshake %d\n", game_speed(), G.shake);
+    fprintf(file, "speed %g\nshake %d\nvolume %d %d %d\n", game_speed(), G.shake, G.volumes[0], G.volumes[1],
+            G.volumes[2]);
     fclose(file);
 }
 
@@ -2143,7 +2164,7 @@ static void draw_collection(void) {
 // shake.
 static void draw_settings(void) {
     bo_gfx_rect(0, 0, G.width, G.height, bo_rgba(0x000000, 0.55f));
-    BORect box = bo_rect(G.width * 0.2f, G.height * 0.18f, G.width * 0.6f, G.height * 0.64f);
+    BORect box = bo_rect(G.width * 0.2f, G.height * 0.06f, G.width * 0.6f, G.height * 0.88f);
     bo_ui_box(box, BO_C_BLACK);
     BORect inner = bo_rect(box.x + 6, box.y + 6, box.w - 12, box.h - 12);
     bo_ui_box(inner, BO_C_DARK);
@@ -2152,7 +2173,7 @@ static void draw_settings(void) {
     bo_ui_area(BO_ID_SETTINGS + 1000, bo_rect(0, 0, G.width, G.height));
     bo_font_draw("Settings", inner.x + inner.w / 2, inner.y + 10, G.height * 0.07f, bo_rgb(BO_C_WHITE),
                  BO_ALIGN_CENTER);
-    float rowH = G.height * 0.1f, y = inner.y + G.height * 0.13f;
+    float rowH = G.height * 0.09f, y = inner.y + G.height * 0.12f;
     float aw = inner.w * 0.12f;
     char text[32];
     bo_font_draw("Game Speed", inner.x + 20, y + rowH * 0.2f, rowH * 0.5f, bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
@@ -2173,6 +2194,28 @@ static void draw_settings(void) {
                      G.shake ? "On" : "Off", 1)) {
         G.shake = !G.shake;
         save_settings();
+    }
+    // The three volumes of Balatro, in steps of 10.
+    static const char *names[3] = {"Volume", "Music", "Sounds"};
+    for (int k = 0; k < 3; k++) {
+        y += rowH * 1.2f;
+        bo_font_draw(names[k], inner.x + 20, y + rowH * 0.2f, rowH * 0.5f, bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
+        int change = 0;
+        if (bo_ui_button(BO_ID_VOLUME_PREV + 2 * k, bo_rect(vx, y, aw, rowH * 0.8f), BO_C_RED, "<",
+                         G.volumes[k] > 0)) {
+            change = -10;
+        }
+        if (bo_ui_button(BO_ID_VOLUME_NEXT + 2 * k, bo_rect(vx + vw - aw, y, aw, rowH * 0.8f), BO_C_RED, ">",
+                         G.volumes[k] < 100)) {
+            change = 10;
+        }
+        if (change) {
+            G.volumes[k] += change;
+            bo_sound_set_volumes(G.volumes[0], G.volumes[1], G.volumes[2]);
+            save_settings();
+        }
+        snprintf(text, sizeof(text), "%d%%", G.volumes[k]);
+        bo_font_draw(text, vx + vw / 2, y + rowH * 0.15f, rowH * 0.55f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
     }
     float bw = inner.w * 0.34f, bh = G.height * 0.09f;
     if (bo_ui_button(BO_ID_SETTINGS_CLOSE, bo_rect(inner.x + (inner.w - bw) / 2, inner.y + inner.h - bh - 10, bw, bh),

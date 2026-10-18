@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.0 (2026-10-18)
+
+- The 20 challenges, with their rules, cards, and banned cards. The start
+  of each challenge agrees with Balatro. Five deck wins open the first five
+  challenges.
+- The statistics screen shows the high scores, the progress, and the
+  career stats of the profile.
+- The settings screen sets the game speed and the screen shake.
+- Endless Mode goes on after the win at ante 8. The blind targets agree
+  with Balatro up to ante 40.
+- The app keeps the decoded textures in a cache. A start takes 0.83 s in
+  place of 3.95 s, after the first start.
+- Fix: the win screen shows the ante of the win.
+
 ## 0.8.0 (2026-10-18)
 
 - The 15 decks and the 8 stakes, with the Eternal, Perishable, and Rental

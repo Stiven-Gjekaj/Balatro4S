@@ -101,7 +101,7 @@ void bo_run_draw_cards(BORun *run, int count) {
 }
 
 // G.FUNCS.draw_from_deck_to_hand: fills the hand. The Serpent draws 3.
-static void draw_to_hand(BORun *run) {
+void bo_run_fill_hand(BORun *run) {
     int limit = run->hand_size > 0 ? run->hand_size : 0;
     int space = limit - run->hand_count;
     if (space > run->deck_count) space = run->deck_count;
@@ -295,7 +295,7 @@ void bo_run_select_blind(BORun *run) {
     snprintf(key, sizeof(key), "nr%d", run->ante);
     shuffle_deck(run, key);
     bo_tag_round_start_bonus(run);
-    draw_to_hand(run);
+    bo_run_fill_hand(run);
     for (int i = 0; i < run->joker_count; i++) {
         BOContext ctx = context_for(BO_CTX_FIRST_HAND_DRAWN);
         bo_joker_calculate(run, &run->jokers[i], &ctx);
@@ -497,7 +497,7 @@ int bo_run_play(BORun *run, uint64_t mask, BOScore *score) {
     if (run->chips >= run->blind_chips || run->hands_left < 1) {
         bo_run_end_round(run);
     } else {
-        draw_to_hand(run);
+        bo_run_fill_hand(run);
         bo_boss_drawn_to_hand(run);
     }
     return 1;
@@ -573,7 +573,7 @@ int bo_run_discard(BORun *run, uint64_t mask) {
     int count = count_bits(mask, run->hand_count);
     if (run->state != BO_STATE_SELECTING || run->discards_left <= 0 || count < 1 || count > BO_MAX_PLAY) return 0;
     bo_run_discard_cards(run, mask, 0);
-    draw_to_hand(run);
+    bo_run_fill_hand(run);
     bo_boss_drawn_to_hand(run);
     return 1;
 }

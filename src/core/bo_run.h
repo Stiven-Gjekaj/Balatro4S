@@ -237,6 +237,9 @@ int bo_run_discard(BORun *run, uint64_t mask);
 // The discard of G.FUNCS.discard_cards_from_highlighted. With hook (The
 // Hook), it uses no discard.
 void bo_run_discard_cards(BORun *run, uint64_t mask, int hook);
+// G.FUNCS.draw_from_deck_to_hand: fills the hand, or draws 3 for The
+// Serpent.
+void bo_run_fill_hand(BORun *run);
 // G.FUNCS.draw_from_deck_to_hand(count): draws count cards.
 void bo_run_draw_cards(BORun *run, int count);
 

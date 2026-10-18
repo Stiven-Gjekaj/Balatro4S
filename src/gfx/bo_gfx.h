@@ -76,6 +76,10 @@ void bo_gfx_effect_sprite(BOShaderEffect effect, const BOTexture *texture, int c
 void bo_gfx_set_background(float time, float spin_time, BOColor colour1, BOColor colour2, BOColor colour3,
                            float contrast, float spin_amount);
 
+// Turns the next sprites by angle (radians) and scales them by scale,
+// both about the point (px, py). bo_gfx_transform(0, 1, 0, 0) stops it.
+void bo_gfx_transform(float angle, float scale, float px, float py);
+
 BOColor bo_rgb(unsigned int hex);
 BOColor bo_rgba(unsigned int hex, float alpha);
 

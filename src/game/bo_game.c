@@ -20,6 +20,7 @@
 #include "bo_pack.h"
 #include "bo_rich.h"
 #include "bo_rules.h"
+#include "bo_tag.h"
 #include "bo_run.h"
 #include "bo_score.h"
 #include "bo_ui.h"
@@ -58,6 +59,7 @@ enum {
     BO_ID_ACTION_2,    // The second button: Sell.
     BO_ID_SKIP,
     BO_ID_REROLL_BOSS,
+    BO_ID_SKIP_BLIND,
     BO_ID_RUN_INFO,
     BO_ID_BACKGROUND,  // A tap on nothing: the focus goes away.
     BO_ID_HAND_CARD = 100,
@@ -67,6 +69,9 @@ enum {
     BO_ID_VOUCHER = 450,
     BO_ID_PACK = 460,
     BO_ID_PACK_CARD = 470,
+    BO_ID_BLIND_TAG = 480,
+    BO_ID_HELD_TAG = 490,
+    BO_ID_TAG_VOUCHER = 530,
 };
 
 // The areas that a card can be in, for the focus.
@@ -78,6 +83,9 @@ typedef enum {
     BO_FOCUS_VOUCHER,
     BO_FOCUS_PACK,       // A pack for sale in the shop.
     BO_FOCUS_PACK_CARD,  // A card of the open pack.
+    BO_FOCUS_BLIND_TAG,  // The tag of a blind on the blind select.
+    BO_FOCUS_HELD_TAG,   // A tag that waits.
+    BO_FOCUS_TAG_VOUCHER,  // A voucher of a Voucher Tag.
 } BOFocusArea;
 
 typedef struct {
@@ -120,6 +128,7 @@ static struct {
     BOTexture tarots;    // Tarots.png: Tarot, Planet, and Spectral cards.
     BOTexture vouchers;  // Vouchers.png.
     BOTexture boosters;  // boosters.png.
+    BOTexture tags;      // tags.png.
     BOLuaValue *text;    // localization/en-us.lua.
 
     BORun *run;
@@ -146,6 +155,7 @@ static struct {
     BOFocusArea focus;
     int focusIndex;
     int showInfo;  // The Run Info screen is open.
+    float blindTagX[2], blindTagY[2];  // The tags of the blind select.
 
     // A drag of a joker.
     int dragIndex;  // -1 when no joker is held.
@@ -338,6 +348,7 @@ int bo_game_start(const char *love_path, int width, int height) {
     G.tarots = load_texture(zip, "resources/textures/2x/Tarots.png", scale);
     G.vouchers = load_texture(zip, "resources/textures/2x/Vouchers.png", scale);
     G.boosters = load_texture(zip, "resources/textures/2x/boosters.png", scale);
+    G.tags = load_texture(zip, "resources/textures/2x/tags.png", scale);
 
     size_t fontSize = 0;
     unsigned char *font = bo_zip_read(zip, "resources/fonts/m6x11plus.ttf", &fontSize);
@@ -456,6 +467,33 @@ static void draw_item(const BOItem *item, float x, float y, float w, float h) {
     if (item->eternal || item->perishable || item->rental) {
         const char *label = item->eternal ? "Eternal" : item->perishable ? "Perishable" : "Rental";
         bo_font_draw(label, x + w / 2, y + h - h * 0.14f, h * 0.1f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    }
+}
+
+static float tag_size(void) {
+    return G.height * 0.075f;
+}
+
+static void draw_tag(BOCenterId tag, float x, float y, float size) {
+    const BOCenterInfo *c = bo_center(tag);
+    draw_cell(&G.tags, 6, 5, c->pos_x, c->pos_y, x, y, size, size, bo_rgb(BO_C_WHITE));
+}
+
+// The place of a tag that waits: in rows under the deck.
+static void held_tag_place(int index, float *x, float *y) {
+    float size = tag_size();
+    int perRow = (int)((G.width - deck_x()) / (size + 4));
+    if (perRow < 1) perRow = 1;
+    *x = deck_x() - 4 + (index % perRow) * (size + 4);
+    *y = G.height * 0.86f - (index / perRow) * (size + 4);
+}
+
+static void draw_held_tags(void) {
+    for (int i = 0; i < G.run->tag_count; i++) {
+        float x, y;
+        held_tag_place(i, &x, &y);
+        draw_tag(G.run->tags[i].center, x, y, tag_size());
+        bo_ui_area(BO_ID_HELD_TAG + i, bo_rect(x, y, tag_size(), tag_size()));
     }
 }
 
@@ -1086,7 +1124,7 @@ static void draw_blind_select(void) {
                 return;
             }
         } else {
-            bo_ui_button(-1, button, BO_C_GREY, done ? "Defeated" : "Upcoming", 0);
+            bo_ui_button(-1, button, BO_C_GREY, done ? ((run->skipped_slots >> slot) & 1 ? "Skipped" : "Defeated") : "Upcoming", 0);
         }
         float y = button.y + bh + 12;
         BORect name = bo_rect(inner.x + 8, y, inner.w - 16, bh * 0.8f);
@@ -1105,6 +1143,26 @@ static void draw_blind_select(void) {
         snprintf(text, sizeof(text), "Reward: %.*s", dollars, "$$$$$$$$$$");
         bo_font_draw(dollars ? text : "No reward", x + colW / 2, y + G.height * 0.12f, G.height * 0.035f,
                      bo_rgb(BO_C_MONEY), BO_ALIGN_CENTER);
+        if (slot != BO_SLOT_BOSS && !done) {
+            // The tag of the blind, and the Skip Blind button.
+            float size = tag_size();
+            float ty = y + G.height * 0.215f;
+            float tx = x + 12;
+            bo_font_draw("or", x + colW / 2, ty - G.height * 0.045f, G.height * 0.032f, bo_rgb(BO_C_WHITE),
+                         BO_ALIGN_CENTER);
+            draw_tag(run->blind_tags[slot], tx, ty, size);
+            G.blindTagX[slot] = tx;
+            G.blindTagY[slot] = ty;
+            bo_ui_area(BO_ID_BLIND_TAG + slot, bo_rect(tx, ty, size, size));
+            BORect skip = bo_rect(tx + size + 8, ty + size * 0.1f, colW - size - 36, size * 0.8f);
+            if (bo_ui_button(current ? BO_ID_SKIP_BLIND : -1, skip, BO_C_RED, "Skip Blind",
+                             current && bo_run_can_skip_blind(run))) {
+                bo_run_skip_blind(run);
+                G.focus = BO_FOCUS_NONE;
+                if (run->state == BO_STATE_PACK) sync_hand();
+                return;
+            }
+        }
         if (info->boss) {
             BODescription d;
             bo_describe_blind(run, blind, &d);
@@ -1169,6 +1227,8 @@ static void draw_cash_out(void) {
             snprintf(count, sizeof(count), "%d", row->count);
             label = "Interest ($1 per $5)";
             color = BO_C_MONEY;
+        } else if (row->kind == BO_EVAL_TAG) {
+            label = "Investment Tag";
         } else if (row->kind == BO_EVAL_JOKER) {
             label = row->index < run->joker_count ? bo_center(run->jokers[row->index].center)->name : "Joker";
         }
@@ -1292,6 +1352,14 @@ static void draw_shop(void) {
         draw_price(run->shop_voucher.cost, x, y2);
         bo_ui_area(BO_ID_VOUCHER, bo_rect(x, y2, G.cardW, G.cardH));
     }
+    for (int i = 0; i < run->tag_voucher_count; i++) {
+        float x, y2;
+        voucher_place(&x, &y2);
+        x += (run->has_shop_voucher ? i + 1 : i) * (G.cardW + 8);
+        draw_item(&run->tag_vouchers[i], x, y2, G.cardW, G.cardH);
+        draw_price(run->tag_vouchers[i].cost, x, y2);
+        bo_ui_area(BO_ID_TAG_VOUCHER + i, bo_rect(x, y2, G.cardW, G.cardH));
+    }
     for (int i = 0; i < run->shop_pack_count; i++) {
         float x, y2;
         pack_place(i, &x, &y2);
@@ -1397,6 +1465,28 @@ static void draw_focus(void) {
         pack_place(G.focusIndex, &x, &y);
         actions[actionCount++] = (BOAction){"Open", BO_C_GREEN, item->cost <= bo_run_spendable(run) || item->cost <= 0};
         break;
+    case BO_FOCUS_BLIND_TAG:
+    case BO_FOCUS_HELD_TAG: {
+        if (G.focus == BO_FOCUS_HELD_TAG && G.focusIndex >= run->tag_count) break;
+        if (G.focus == BO_FOCUS_BLIND_TAG && run->state != BO_STATE_BLIND_SELECT) break;
+        BOCenterId tag = G.focus == BO_FOCUS_HELD_TAG ? run->tags[G.focusIndex].center : run->blind_tags[G.focusIndex];
+        int orbital = G.focus == BO_FOCUS_HELD_TAG ? run->tags[G.focusIndex].orbital_hand
+                                                  : run->orbital_choices[G.focusIndex];
+        float tx = G.blindTagX[G.focusIndex & 1], ty = G.blindTagY[G.focusIndex & 1];
+        if (G.focus == BO_FOCUS_HELD_TAG) held_tag_place(G.focusIndex, &tx, &ty);
+        BODescription d;
+        bo_describe_tag(run, tag, orbital, &d);
+        draw_text_box(&d, NULL, 0, tx, ty, tag_size(), tag_size(), NULL, 0, 0);
+        return;
+    }
+    case BO_FOCUS_TAG_VOUCHER:
+        if (G.focusIndex >= run->tag_voucher_count) break;
+        item = &run->tag_vouchers[G.focusIndex];
+        voucher_place(&x, &y);
+        x += (run->has_shop_voucher ? G.focusIndex + 1 : G.focusIndex) * (G.cardW + 8);
+        actions[actionCount++] =
+            (BOAction){"Redeem", BO_C_ORANGE, idle && bo_voucher_can_redeem_tag(run, G.focusIndex)};
+        break;
     case BO_FOCUS_PACK_CARD:
         if (run->state != BO_STATE_PACK || G.focusIndex >= run->pack_count) break;
         item = &run->pack_cards[G.focusIndex].item;
@@ -1436,6 +1526,7 @@ static void draw_focus(void) {
         break;
     case BO_FOCUS_SHOP: done = bo_run_buy(run, G.focusIndex); break;
     case BO_FOCUS_VOUCHER: done = bo_voucher_redeem(run); break;
+    case BO_FOCUS_TAG_VOUCHER: done = bo_voucher_redeem_tag(run, G.focusIndex); break;
     case BO_FOCUS_PACK:
         done = bo_run_open_pack(run, G.focusIndex);
         if (done) sync_hand();
@@ -1473,6 +1564,15 @@ static void handle_focus_taps(void) {
     }
     for (int i = 0; i < run->pack_count; i++) {
         if (bo_ui_clicked(BO_ID_PACK_CARD + i)) toggle_focus(BO_FOCUS_PACK_CARD, i);
+    }
+    for (int i = 0; i < 2; i++) {
+        if (bo_ui_clicked(BO_ID_BLIND_TAG + i)) toggle_focus(BO_FOCUS_BLIND_TAG, i);
+    }
+    for (int i = 0; i < run->tag_count; i++) {
+        if (bo_ui_clicked(BO_ID_HELD_TAG + i)) toggle_focus(BO_FOCUS_HELD_TAG, i);
+    }
+    for (int i = 0; i < run->tag_voucher_count; i++) {
+        if (bo_ui_clicked(BO_ID_TAG_VOUCHER + i)) toggle_focus(BO_FOCUS_TAG_VOUCHER, i);
     }
     if (bo_ui_clicked(BO_ID_BACKGROUND)) G.focus = BO_FOCUS_NONE;
 }
@@ -1656,6 +1756,7 @@ void bo_game_frame(double dt) {
         draw_pack();
     }
     draw_items();
+    draw_held_tags();
     handle_focus_taps();
     if (G.focus != BO_FOCUS_NONE) draw_focus();
     draw_popups(dt);

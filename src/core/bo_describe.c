@@ -380,3 +380,28 @@ int bo_describe_item(const BORun *run, const BOItem *item, BODescription *out) {
     }
     return 1;
 }
+
+int bo_describe_blind(const BORun *run, int blind, BODescription *out) {
+    memset(out, 0, sizeof(*out));
+    const BOBlindInfo *info = bo_blind_info((BOBlindId)blind);
+    snprintf(out->name, sizeof(out->name), "%s", info->name);
+    if (!gText) return 0;
+    char path[128];
+    snprintf(path, sizeof(path), "descriptions.Blind.%s", info->key);
+    BOLuaValue *entry = bo_luatab_path(gText, path);
+    if (!entry) return 0;
+    const char *name = bo_luatab_string(entry, "name");
+    if (name) snprintf(out->name, sizeof(out->name), "%s", name);
+    BOVars vars;
+    memset(&vars, 0, sizeof(vars));
+    // The Ox names the hand that was played most.
+    if (blind == BO_BL_OX) var_text(&vars, poker_hand(run ? run->most_played_hand : BO_HAND_HIGH_CARD));
+    BOLuaValue *text = bo_luatab_get(entry, "text");
+    int lines = bo_luatab_length(text);
+    for (int i = 0; i < lines && out->line_count < BO_DESCRIBE_LINES; i++) {
+        BOLuaValue *line = bo_luatab_item(text, i);
+        if (!line || line->type != BO_LUA_STRING) continue;
+        fill_line(line->string, &vars, out->lines[out->line_count++], BO_DESCRIBE_LINE_LENGTH);
+    }
+    return 1;
+}

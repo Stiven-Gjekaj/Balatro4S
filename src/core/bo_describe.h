@@ -27,6 +27,9 @@ void bo_describe_set_text(BOLuaValue *root);
 // The text of a joker, a consumable, a voucher, or a pack.
 int bo_describe_item(const struct BORun *run, const BOItem *item, BODescription *out);
 
+// The name and the text of a blind, as BO_BL_OX.
+int bo_describe_blind(const struct BORun *run, int blind, BODescription *out);
+
 // A word of the dictionary of misc, as "k_mult", or the key itself.
 const char *bo_describe_word(const char *key);
 

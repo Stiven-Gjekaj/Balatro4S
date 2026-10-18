@@ -80,3 +80,21 @@ BO_TEST(test_describe_fills_the_variables_of_tarot_planet_and_pack_cards) {
     bo_luatab_free(text);
     free(run);
 }
+
+BO_TEST(test_describe_writes_the_text_of_a_boss) {
+    BOLuaValue *text = bo_luatab_parse(
+        "return { descriptions = { Blind = { bl_ox = { name = 'The Ox', text = { 'Playing a #1#', 'sets money to $0' } } } },\n"
+        "misc = { poker_hands = { ['Two Pair'] = 'Two Pair' } } }");
+    bo_describe_set_text(text);
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    run->most_played_hand = BO_HAND_TWO_PAIR;
+    BODescription d;
+    BO_EXPECT(bo_describe_blind(run, BO_BL_OX, &d));
+    BO_EQUAL(@(d.name), @"The Ox");
+    BO_EQUAL(@(d.lines[0]), @"Playing a Two Pair");
+    BO_EQUAL(@(d.lines[1]), @"sets money to $0");
+    bo_describe_set_text(NULL);
+    bo_luatab_free(text);
+    free(run);
+}

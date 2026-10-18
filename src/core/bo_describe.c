@@ -235,6 +235,95 @@ static const char *set_key(int set) {
     }
 }
 
+// The name of a card from the text file, as localize name_text.
+static const char *center_name(BOCenterId center) {
+    const BOCenterInfo *c = bo_center(center);
+    if (!c) return "";
+    static const char *sets[] = {"Default", "Enhanced", "Edition", "Joker", "Tarot", "Planet", "Spectral",
+                                 "Voucher", "Back", "Other", "Tag"};
+    char path[128];
+    snprintf(path, sizeof(path), "descriptions.%s.%s.name", c->set < 11 ? sets[c->set] : "Other", c->key);
+    const char *word = gText ? bo_luatab_string(gText, path) : NULL;
+    return word ? word : c->name;
+}
+
+#define IS_C(key) (item->center == BO_C_##key)
+
+// The loc_vars of generate_card_ui for a Tarot, a Planet, a Spectral card,
+// a pack, or a voucher.
+static void other_vars(const BORun *run, const BOItem *item, BOVars *v) {
+    const BOCenterInfo *c = bo_item_center(item);
+    int has = 0;
+    double max = bo_center_number(c, BO_F_MAX_HIGHLIGHTED, &has);
+    const char *modConv = bo_center_text(c, BO_F_MOD_CONV);
+    const char *suitConv = bo_center_text(c, BO_F_SUIT_CONV);
+    switch (c->set) {
+    case BO_SET_BOOSTER:
+        var_number(v, bo_center_number(c, BO_F_CHOOSE, NULL));
+        var_number(v, c->extra);
+        break;
+    case BO_SET_VOUCHER:
+        if ((item->center == BO_V_TAROT_MERCHANT) || (item->center == BO_V_TAROT_TYCOON) || (item->center == BO_V_PLANET_MERCHANT) || (item->center == BO_V_PLANET_TYCOON)) {
+            var_number(v, bo_center_number(c, BO_F_EXTRA_DISP, NULL));
+        } else if ((item->center == BO_V_SEED_MONEY) || (item->center == BO_V_MONEY_TREE)) {
+            var_number(v, c->extra / 5);
+        } else {
+            var_number(v, c->extra);
+        }
+        break;
+    case BO_SET_SPECTRAL:
+        if (IS_C(FAMILIAR) || IS_C(GRIM) || IS_C(INCANTATION) || IS_C(CRYPTID)) var_number(v, c->extra);
+        if (IS_C(IMMOLATE)) {
+            var_number(v, bo_item_get(item, BO_F_EXTRA_DESTROY));
+            var_number(v, bo_item_get(item, BO_F_EXTRA_DOLLARS));
+        }
+        if (IS_C(ECTOPLASM)) var_number(v, run && run->ecto_minus ? run->ecto_minus : 1);
+        break;
+    case BO_SET_PLANET: {
+        int type = bo_rules_hand_by_name(bo_center_text(c, BO_F_HAND_TYPE));
+        if (type < 0) break;
+        int level = run ? run->hands[type].level : 1;
+        var_number(v, level);
+        var_text(v, poker_hand(type));
+        var_number(v, bo_hand_level_mult((BOHandType)type, 2) - bo_hand_level_mult((BOHandType)type, 1));
+        var_number(v, bo_hand_level_chips((BOHandType)type, 2) - bo_hand_level_chips((BOHandType)type, 1));
+        break;
+    }
+    case BO_SET_TAROT:
+        if (IS_C(FOOL)) {
+            BOCenterId last = run ? run->last_tarot_planet : BO_CENTER_NONE;
+            var_text(v, last != BO_CENTER_NONE ? center_name(last) : bo_describe_word("k_none"));
+        } else if (modConv) {
+            var_number(v, max);
+            var_text(v, center_name(bo_center_by_key(modConv)));
+        } else if (suitConv) {
+            var_number(v, max);
+            var_text(v, suit_word(bo_rules_suit_by_name(suitConv), 1));
+        } else if (IS_C(HIGH_PRIESTESS)) {
+            var_number(v, bo_center_number(c, BO_F_PLANETS, NULL));
+        } else if (IS_C(EMPEROR)) {
+            var_number(v, bo_center_number(c, BO_F_TAROTS, NULL));
+        } else if (IS_C(HERMIT)) {
+            var_number(v, c->extra);
+        } else if (IS_C(WHEEL_OF_FORTUNE)) {
+            var_number(v, run ? run->probabilities : 1);
+            var_number(v, c->extra);
+        } else if (IS_C(STRENGTH) || IS_C(HANGED_MAN) || IS_C(DEATH)) {
+            var_number(v, max);
+        } else if (IS_C(TEMPERANCE)) {
+            int money = 0;
+            for (int i = 0; run && i < run->joker_count; i++) {
+                if (bo_item_center(&run->jokers[i])->set == BO_SET_JOKER) money += run->jokers[i].sell_cost;
+            }
+            var_number(v, c->extra);
+            var_number(v, money < c->extra ? money : c->extra);
+        }
+        break;
+    default: break;
+    }
+    (void)has;
+}
+
 // Replaces each #n# of line with the variable n.
 static void fill_line(const char *line, const BOVars *vars, char *out, int size) {
     int o = 0;
@@ -277,7 +366,11 @@ int bo_describe_item(const BORun *run, const BOItem *item, BODescription *out) {
     if (name) snprintf(out->name, sizeof(out->name), "%s", name);
     BOVars vars;
     memset(&vars, 0, sizeof(vars));
-    if (c->set == BO_SET_JOKER) joker_vars(run, item, &vars);
+    if (c->set == BO_SET_JOKER) {
+        joker_vars(run, item, &vars);
+    } else {
+        other_vars(run, item, &vars);
+    }
     BOLuaValue *text = bo_luatab_get(entry, "text");
     int lines = bo_luatab_length(text);
     for (int i = 0; i < lines && out->line_count < BO_DESCRIBE_LINES; i++) {

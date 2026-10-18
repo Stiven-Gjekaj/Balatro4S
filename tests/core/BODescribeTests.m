@@ -46,3 +46,37 @@ BO_TEST(test_describe_writes_numbers_as_lua_does) {
     bo_describe_number(0.1 + 0.2, text, sizeof(text));
     BO_EQUAL(@(text), @"0.3");
 }
+
+BO_TEST(test_describe_fills_the_variables_of_tarot_planet_and_pack_cards) {
+    BOLuaValue *text = bo_luatab_parse(
+        "return { descriptions = {\n"
+        "  Tarot = { c_magician = { name = 'The Magician', text = { 'Enhances {C:attention}#1#{}', 'to {C:attention}#2#' } },\n"
+        "            c_fool = { name = 'The Fool', text = { 'Last: #1#' } } },\n"
+        "  Planet = { c_pluto = { name = 'Pluto', text = { 'lvl.#1# #2#', '+#3# Mult and +#4# chips' } } },\n"
+        "  Enhanced = { m_lucky = { name = 'Lucky Card', text = {} } },\n"
+        "  Other = { p_arcana_normal = { name = 'Arcana Pack', text = { 'Choose #1# of up to #2#' } } },\n"
+        "}, misc = { dictionary = { k_none = 'None' }, poker_hands = { ['High Card'] = 'High Card' } } }");
+    bo_describe_set_text(text);
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    BODescription d;
+    BOItem magician = bo_pool_make_item(run, BO_C_MAGICIAN);
+    BO_EXPECT(bo_describe_item(run, &magician, &d));
+    BO_EQUAL(@(d.lines[0]), @"Enhances {C:attention}2{}");
+    BO_EQUAL(@(d.lines[1]), @"to {C:attention}Lucky Card");
+    BOItem fool = bo_pool_make_item(run, BO_C_FOOL);
+    bo_describe_item(run, &fool, &d);
+    BO_EQUAL(@(d.lines[0]), @"Last: None");
+    BOItem pluto = bo_pool_make_item(run, BO_C_PLUTO);
+    bo_run_level_up_hand(run, BO_HAND_HIGH_CARD, 2);
+    bo_describe_item(run, &pluto, &d);
+    BO_EQUAL(@(d.lines[0]), @"lvl.3 High Card");
+    BO_EQUAL(@(d.lines[1]), @"+1 Mult and +10 chips");
+    BOItem pack = bo_pool_make_item(run, BO_P_ARCANA_NORMAL_2);
+    bo_describe_item(run, &pack, &d);
+    BO_EQUAL(@(d.name), @"Arcana Pack");
+    BO_EQUAL(@(d.lines[0]), @"Choose 1 of up to 3");
+    bo_describe_set_text(NULL);
+    bo_luatab_free(text);
+    free(run);
+}

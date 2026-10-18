@@ -8,13 +8,15 @@ Objective-C, with OpenGL ES 2.0. You install it as a .deb package.
 
 This is a fan project. It is not from LocalThunk or Playstack.
 
-**The status:** early work. Version 0.2.0 plays a full run of 8 antes with
-the standard deck, with the seeds of Balatro. The shop, the jokers, and the
-other cards come in the next versions. The plan is in
+**The status:** early work. Version 0.3.0 plays a full run of 8 antes with
+the standard deck and the seeds of Balatro. It has the shop and all 150
+jokers. The Tarot, Planet, and Spectral cards, the packs, and the vouchers
+come in the next versions. The plan is in
 [TODO.md](TODO.md), and the decisions and their reasons are in
 [docs/decisions.md](docs/decisions.md).
 
 <img src="assets/screenshots/blinds.png" width="400" alt="The blind select: the Small Blind is defeated, the Big Blind waits with a Select button, and the boss The Pillar is upcoming"> <img src="assets/screenshots/table.png" width="400" alt="A round: the blind and its target in the side panel, eight cards in the hand, the Play Hand and Discard buttons, and the sort buttons">
+<img src="assets/screenshots/shop.png" width="400" alt="The shop: Next Round, Reroll, two jokers for sale, a voucher, two packs, and the text of the Mime joker with a Buy button"> <img src="assets/screenshots/jokers.png" width="400" alt="A hand scores: the King adds 10 chips and the Joker adds 4 Mult">
 
 ## You need a copy of Balatro
 

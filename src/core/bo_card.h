@@ -59,7 +59,15 @@ typedef struct {
     uint8_t seal;
     uint8_t debuffed;
     int16_t perma_bonus;  // The chips that Hiker adds for the rest of the run.
-    uint32_t uid;         // The order of creation. Balatro keeps it as unique_val.
+    uint32_t uid;         // The order of creation (sort_id). unique_val follows it.
+    // Flags of one play or one round.
+    uint8_t vampired;          // Vampire took the enhancement in this play.
+    uint8_t lucky_trigger;     // A Lucky Card paid in this play.
+    uint8_t shattered;         // A Glass Card broke.
+    uint8_t destroyed;
+    uint8_t face_down;         // A boss blind turned the card.
+    uint8_t played_this_ante;  // For The Pillar.
+    uint8_t forced_selection;  // Cerulean Bell.
 } BOCard;
 
 BOCard bo_card_make(int rank, BOSuit suit);

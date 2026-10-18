@@ -302,6 +302,8 @@ void bo_run_start_deck(BORun *run, const char *seed, BOCenterId back, int stake)
         run->hands[i].visible = !(i == BO_HAND_FLUSH_FIVE || i == BO_HAND_FLUSH_HOUSE || i == BO_HAND_FIVE_OF_A_KIND);
     }
     BOStartParams p = {4, 3, 4, 8, 5, 2, 0, 0};
+    // The Blue Stake and the stakes over it take one discard.
+    if (stake >= 5) p.discards--;
     apply_back(run, &p);
     run->hands_per_round = p.hands;
     run->discards_per_round = p.discards;

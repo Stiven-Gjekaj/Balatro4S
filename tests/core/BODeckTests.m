@@ -63,6 +63,14 @@ BO_TEST(test_deck_abandoned_and_checkered_change_the_cards) {
     free(run);
 }
 
+BO_TEST(test_deck_blue_stake_takes_a_discard) {
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start_deck(run, "ABCDEFGH", BO_B_RED, 5);
+    BO_EQUAL_INT(run->discards_per_round, 3);
+    BO_EQUAL_INT(run->discards_left, 3);
+    free(run);
+}
+
 BO_TEST(test_deck_slots_money_and_hands) {
     BORun *run = start(BO_B_PAINTED);
     BO_EQUAL_INT(run->hand_size, 10);

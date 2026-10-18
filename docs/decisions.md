@@ -256,3 +256,26 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
   `Balatro.love` are in the header of each file, so a new `Balatro.love`
   makes the cache old. The first start takes 5.8 s and writes the cache.
   A later start takes 0.83 s.
+
+## The sound
+
+- **stb_vorbis decodes the Ogg files of Balatro** (2026-10-18). It is one
+  C file with the MIT or the public domain license, at a fixed commit in
+  `src/third_party`. The mixer includes it, so the tests on the Mac build
+  it too.
+- **The mixer follows `engine/sound_manager.lua`.** Each play is a voice
+  with a pitch and a volume, as a LOVE source. The pitch changes the speed
+  of the samples with a linear filter. The five music tracks play at the
+  same time at pitch 0.7 and volume 0.6. Each frame fades the track of the
+  state in and the others out, at the speed of `dt * 3`, as `MODULATE`
+  does. A game over slows the music to half speed.
+- **The music streams, and the short sounds are in memory.** A track that
+  nobody can hear decodes nothing. When it fades in again, the decoder
+  seeks to the place of the other tracks. The short sounds use about
+  10 MB. The thread that loads them takes 2.6 s on the A5, after the
+  start, so the start does not wait for it.
+- **The audio session is "ambient sound".** The ring/silent switch mutes
+  the game, and the music of another app goes on under it.
+- **The sounds play at the events of the game, with the pitch and the
+  volume of Balatro.** The ambient sounds of the fire and the organ are not
+  in the game, because the game has no flames on the score yet.

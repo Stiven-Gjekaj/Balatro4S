@@ -93,6 +93,4 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 ## 1.0.0
 
 - Compare all the content with Balatro 1.0.1o, and fix each difference.
-- Record videos of the game with a screen recorder from Cydia. RecordMyScreen
-  is on the phone. A person must start it with a tap.
 - Publish the release on GitHub with the .deb, and add it to the Cydia repository.

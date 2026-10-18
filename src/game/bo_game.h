@@ -20,4 +20,7 @@ void bo_game_frame(double dt);
 
 void bo_game_touch(int phase, float x, float y);
 
+// Does a debug command that changes the run, for example "target 10".
+void bo_game_debug(const char *line);
+
 #endif

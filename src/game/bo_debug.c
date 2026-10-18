@@ -31,7 +31,7 @@ void bo_debug_poll(double dt) {
             bo_game_touch(BO_TOUCH_ENDED, x, y);
             fprintf(stderr, "debug: tap %.0f %.0f\n", x, y);
         } else {
-            fprintf(stderr, "debug: unknown command: %s", line);
+            bo_game_debug(line);
         }
     }
     fclose(file);

@@ -9,6 +9,7 @@
 #include "bo_blind.h"
 #include "bo_boss.h"
 #include "bo_card.h"
+#include "bo_challenge_data.h"
 #include "bo_debug.h"
 #include "bo_describe.h"
 #include "bo_font.h"
@@ -81,6 +82,10 @@ enum {
     BO_ID_SPEED_NEXT,
     BO_ID_SHAKE,
     BO_ID_INFO_SETTINGS,  // Run Info: open the settings.
+    BO_ID_CHALLENGES,     // The run setup: open the challenges.
+    BO_ID_CH_CLOSE,
+    BO_ID_CH_PLAY,
+    BO_ID_CH_ITEM = 660,  // A challenge of the list.
     BO_ID_COL_CLOSE,
     BO_ID_COL_PREV,
     BO_ID_COL_NEXT,
@@ -205,6 +210,8 @@ static struct {
     int collection;         // The collection is open.
     int stats;              // The stats of the profile are open.
     int settings;           // The settings are open.
+    int challenges;         // The list of challenges is open.
+    int challengeSel;       // The challenge that shows its rules.
     int speedIndex;         // G.SETTINGS.GAMESPEED: 0.5, 1, 2, or 4.
     int shake;              // The screen shakes.
     char settingsPath[1024];
@@ -456,6 +463,16 @@ static void autosave(void) {
     }
     BOSaveExtra extra = {G.endless};
     if (!bo_save_write(G.run, &extra, G.savePath)) fprintf(stderr, "save: cannot write %s\n", G.savePath);
+}
+
+// A new run of a challenge, as G.FUNCS.start_challenge_run.
+static void new_challenge_run(int index) {
+    char seed[9];
+    bo_random_string((double)time(NULL) * 0.33411983 + fmod(G.time, 1000) * 0.412311010, seed);
+    bo_run_start_challenge(G.run, seed, index);
+    reset_views();
+    G.endless = 0;
+    fprintf(stderr, "new run: seed %s, challenge %s\n", seed, bo_challenge(index)->id);
 }
 
 static void new_run(void) {
@@ -1581,9 +1598,16 @@ static void draw_setup(void) {
     bo_ui_box(box, BO_C_BLACK);
     BORect inner = bo_rect(box.x + 8, box.y + 8, box.w - 16, box.h - 16);
     bo_ui_box(inner, BO_C_DARK);
-    bo_font_draw("New Run", inner.x + inner.w / 2, inner.y + G.height * 0.02f, G.height * 0.08f,
-                 bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
     float colW = inner.w * 0.2f;
+    // The title sits in the gap between the left and the right buttons.
+    float gapLeft = inner.x + 24 + colW * 1.35f, gapRight = inner.x + inner.w - colW * 1.95f - 20;
+    bo_font_draw("New Run", (gapLeft + gapRight) / 2, inner.y + G.height * 0.025f, G.height * 0.065f,
+                 bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    if (bo_ui_button(BO_ID_CHALLENGES,
+                     bo_rect(inner.x + inner.w - colW * 1.95f - 20, inner.y + 14, colW * 0.95f, G.height * 0.075f),
+                     BO_C_ORANGE, "Challenges", 1)) {
+        G.challenges = 1;
+    }
     if (bo_ui_button(BO_ID_COLLECTION, bo_rect(inner.x + inner.w - colW - 14, inner.y + 14, colW, G.height * 0.075f),
                      BO_C_ORANGE, "Collection", 1)) {
         G.collection = 1;
@@ -1980,6 +2004,87 @@ static void draw_settings(void) {
     if (bo_ui_button(BO_ID_SETTINGS_CLOSE, bo_rect(inner.x + (inner.w - bw) / 2, inner.y + inner.h - bh - 10, bw, bh),
                      BO_C_ORANGE, "Back", 1)) {
         G.settings = 0;
+    }
+}
+
+// --- The challenges ----------------------------------------------------------
+
+// The list of the 20 challenges and the rules of the one that the player
+// taps, as the challenge list of Balatro.
+static void draw_challenges(void) {
+    BORect box = bo_rect(6, 6, G.width - 12, G.height - 12);
+    bo_ui_box(box, BO_C_BLACK);
+    BORect inner = bo_rect(box.x + 6, box.y + 6, box.w - 12, box.h - 12);
+    bo_ui_box(inner, BO_C_DARK);
+    int open = bo_profile_challenges_open(G.profile);
+    float colW = inner.w * 0.25f - 10, rowH = (inner.h - 20) / 10.0f;
+    for (int i = 0; i < BO_CHALLENGE_COUNT; i++) {
+        int col = i / 10, row = i % 10;
+        BORect r = bo_rect(inner.x + 8 + col * (colW + 6), inner.y + 10 + row * rowH, colW, rowH - 6);
+        const char *label = "Locked";
+        BODescription d;
+        if (i < open) {
+            bo_describe_challenge(i, &d);
+            label = d.name;
+        }
+        int done = G.profile && G.profile->challenges_completed[i];
+        unsigned int colour = i == G.challengeSel ? BO_C_RED : done ? BO_C_GREEN : BO_C_GREY;
+        if (bo_ui_button(BO_ID_CH_ITEM + i, r, colour, label, 1)) G.challengeSel = i;
+    }
+    // The rules of the chosen challenge.
+    int sel = G.challengeSel;
+    float tx = inner.x + inner.w * 0.52f, tw = inner.w * 0.46f, line = G.height * 0.04f, pad = 8;
+    float y = inner.y + 10;
+    if (sel >= open) {
+        bo_font_draw("Locked", tx + tw / 2, y, G.height * 0.06f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+        bo_rich_draw("Win with {C:attention}5{} decks, then", tx + tw / 2, y + G.height * 0.1f, line,
+                     bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+        bo_rich_draw("finish challenges to open more", tx + tw / 2, y + G.height * 0.1f + line * 1.2f, line,
+                     bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    } else {
+        BODescription d;
+        bo_describe_challenge(sel, &d);
+        BORect nameBox = bo_rect(tx, y, tw, G.height * 0.07f);
+        bo_ui_box(nameBox, BO_C_L_BLACK);
+        bo_font_draw(d.name, tx + tw / 2, y + G.height * 0.008f, G.height * 0.055f, bo_rgb(BO_C_WHITE),
+                     BO_ALIGN_CENTER);
+        y += nameBox.h + 6;
+        int lines = d.line_count > 0 ? d.line_count : 1;
+        BORect body = bo_rect(tx, y, tw, lines * line * 1.25f + pad * 2);
+        bo_ui_box(body, BO_C_WHITE);
+        if (d.line_count == 0) {
+            bo_rich_draw("{C:inactive}None", tx + tw / 2, y + pad, line, bo_rgb(BO_C_TEXT_DARK), BO_ALIGN_CENTER);
+        }
+        for (int i = 0; i < d.line_count; i++) {
+            bo_rich_draw(d.lines[i], tx + tw / 2, y + pad + i * line * 1.25f, line * 0.85f, bo_rgb(BO_C_TEXT_DARK),
+                         BO_ALIGN_CENTER);
+        }
+        y += body.h + 10;
+        // The jokers and the consumables of the start.
+        const BOChallengeInfo *ch = bo_challenge(sel);
+        float cw = G.cardW * 0.62f, chh = G.cardH * 0.62f;
+        int n = 0;
+        for (int i = 0; i < ch->joker_count + ch->consumable_count && n < 6; i++, n++) {
+            const BOChallengeCard *c = i < ch->joker_count ? &ch->jokers[i] : &ch->consumables[i - ch->joker_count];
+            BOItem item;
+            memset(&item, 0, sizeof(item));
+            item.center = bo_center_by_key(c->key);
+            if (item.center == BO_CENTER_NONE) continue;
+            bo_item_set_ability(&item, item.center, 0);
+            if (c->edition && strcmp(c->edition, "negative") == 0) item.edition = BO_EDITION_NEGATIVE;
+            item.eternal = c->eternal;
+            draw_item(&item, tx + n * (cw + 6), y, cw, chh);
+        }
+        if (n == 0) {
+            bo_font_draw("No jokers", tx + tw / 2, y + chh * 0.4f, line, bo_rgb(BO_C_GREY), BO_ALIGN_CENTER);
+        }
+    }
+    float bw = inner.w * 0.2f, bh = G.height * 0.09f, by = inner.y + inner.h - bh - 8;
+    if (bo_ui_button(BO_ID_CH_CLOSE, bo_rect(tx, by, bw, bh), BO_C_ORANGE, "Back", 1)) G.challenges = 0;
+    if (bo_ui_button(BO_ID_CH_PLAY, bo_rect(tx + tw - bw, by, bw, bh), BO_C_BLUE, "Play", sel < open)) {
+        G.challenges = 0;
+        G.setup = 0;
+        new_challenge_run(sel);
     }
 }
 
@@ -2652,6 +2757,13 @@ void bo_game_frame(double dt) {
     bo_gfx_begin(G.width, G.height, bo_rgb(0x3a5c4f));
     shake_room();
     if (G.unlockConfirm > 0) G.unlockConfirm -= (float)dt;
+    if (G.challenges) {
+        draw_challenges();
+        draw_notice(dt);
+        bo_gfx_flush();
+        bo_ui_end();
+        return;
+    }
     if (G.stats) {
         draw_stats();
         draw_notice(dt);

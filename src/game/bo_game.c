@@ -22,6 +22,7 @@
 #include "bo_run.h"
 #include "bo_score.h"
 #include "bo_ui.h"
+#include "bo_voucher.h"
 #include "bo_zip.h"
 
 // The width of one card in the 2x atlases of Balatro.
@@ -55,6 +56,7 @@ enum {
     BO_ID_ACTION,      // The first button of the focused card: Buy, Use, or Sell.
     BO_ID_ACTION_2,    // The second button: Sell.
     BO_ID_SKIP,
+    BO_ID_REROLL_BOSS,
     BO_ID_RUN_INFO,
     BO_ID_BACKGROUND,  // A tap on nothing: the focus goes away.
     BO_ID_HAND_CARD = 100,
@@ -1052,6 +1054,13 @@ static void draw_blind_select(void) {
         bo_font_draw(dollars ? text : "No reward", x + colW / 2, y + G.height * 0.12f, G.height * 0.035f,
                      bo_rgb(BO_C_MONEY), BO_ALIGN_CENTER);
         if (!current) bo_gfx_rect(box.x, box.y, box.w, box.h, bo_rgba(0x000000, 0.35f));
+        // Director's Cut and Retcon: a new boss for $10.
+        if (slot == BO_SLOT_BOSS && (run->used_vouchers[BO_V_DIRECTORS_CUT] || run->used_vouchers[BO_V_RETCON])) {
+            BORect reroll = bo_rect(x + 8, G.height - G.height * 0.1f, colW - 16, G.height * 0.075f);
+            if (bo_ui_button(BO_ID_REROLL_BOSS, reroll, BO_C_RED, "Reroll Boss $10", bo_voucher_can_reroll_boss(run))) {
+                bo_voucher_reroll_boss(run);
+            }
+        }
     }
 }
 
@@ -1320,6 +1329,7 @@ static void draw_focus(void) {
         if (!run->has_shop_voucher) break;
         item = &run->shop_voucher;
         voucher_place(&x, &y);
+        actions[actionCount++] = (BOAction){"Redeem", BO_C_ORANGE, idle && bo_voucher_can_redeem(run)};
         break;
     case BO_FOCUS_PACK:
         if (G.focusIndex >= run->shop_pack_count) break;
@@ -1365,6 +1375,7 @@ static void draw_focus(void) {
         }
         break;
     case BO_FOCUS_SHOP: done = bo_run_buy(run, G.focusIndex); break;
+    case BO_FOCUS_VOUCHER: done = bo_voucher_redeem(run); break;
     case BO_FOCUS_PACK:
         done = bo_run_open_pack(run, G.focusIndex);
         if (done) sync_hand();

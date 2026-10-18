@@ -600,6 +600,7 @@ void bo_run_cash_out(BORun *run) {
         run->slot = BO_SLOT_SMALL;
         run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, NULL);
         run->boss_rerolled = 0;
+        run->skipped_slots = 0;
     } else {
         run->slot++;
     }

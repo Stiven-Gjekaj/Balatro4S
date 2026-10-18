@@ -165,6 +165,7 @@ typedef struct BORun {
     BORoundEval eval;
     BOCenterId voucher;      // current_round.voucher.
     int boss_rerolled;       // round_resets.boss_rerolled: Director's Cut.
+    int skipped_slots;       // blind_states 'Skipped': bit i is slot i.
 
     // The cards.
     BOCard deck[BO_MAX_CARDS];  // The top is the last card.

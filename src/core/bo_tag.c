@@ -283,6 +283,7 @@ int bo_run_skip_blind(BORun *run) {
     if (!bo_run_can_skip_blind(run)) return 0;
     run->skips++;
     int slot = run->slot;
+    run->skipped_slots |= 1 << slot;
     bo_tag_add(run, run->blind_tags[slot], slot);
     run->slot = slot == BO_SLOT_SMALL ? BO_SLOT_BIG : BO_SLOT_BOSS;
     for (int i = 0; i < run->joker_count; i++) {

@@ -76,6 +76,7 @@ BO_TEST(test_tag_skip_moves_to_the_next_blind) {
     BO_EXPECT(bo_run_skip_blind(run));
     BO_EQUAL_INT(run->slot, BO_SLOT_BIG);
     BO_EQUAL_INT(run->skips, 1);
+    BO_EQUAL_INT(run->skipped_slots, 1 << BO_SLOT_SMALL);
     BO_EXPECT(bo_run_skip_blind(run));
     BO_EQUAL_INT(run->slot, BO_SLOT_BOSS);
     BO_EXPECT(!bo_run_can_skip_blind(run));

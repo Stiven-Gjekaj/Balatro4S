@@ -23,6 +23,7 @@
 #include "bo_rules.h"
 #include "bo_tag.h"
 #include "bo_run.h"
+#include "bo_save.h"
 #include "bo_score.h"
 #include "bo_ui.h"
 #include "bo_voucher.h"
@@ -174,6 +175,9 @@ static struct {
     int setup;              // The run setup is open: the choice of the deck.
     BOCenterId setupBack;   // The deck of the next run.
     int setupStake;         // The stake of the next run, from 1 to 8.
+    char savePath[1024];    // save.b4s beside Balatro.love.
+    BORun *saved;           // The run as the save file has it.
+    int savedEndless;
     float blindTagX[2], blindTagY[2];  // The tags of the blind select.
 
     // A drag of a joker.
@@ -346,24 +350,47 @@ static void popup(const char *text, float x, float y, unsigned int color) {
     }
 }
 
-static void new_run(void) {
-    // Balatro makes the seed from the place and the time of the cursor.
-    // Here the time of the clock gives the number.
-    char seed[9];
-    bo_random_string((double)time(NULL) * 0.33411983 + fmod(G.time, 1000) * 0.412311010, seed);
-    bo_run_start_deck(G.run, seed, G.setupBack ? G.setupBack : BO_B_RED, G.setupStake ? G.setupStake : 1);
+// The views of the screen for the run in G.run, after a new start or a
+// load.
+static void reset_views(void) {
     G.handCount = 0;
     G.playCount = 0;
     G.jokerViewCount = 0;
     G.consumableViewCount = 0;
     G.flow = BO_FLOW_IDLE;
     G.shownHand = NULL;
-    G.shownRound = 0;
+    G.shownRound = G.run->chips;
     G.shownDollars = G.run->dollars;
+    G.focus = BO_FOCUS_NONE;
     bo_motion_place(&G.chipsBox, 0, 0, 0);
     bo_motion_place(&G.multBox, 0, 0, 0);
+}
+
+// Writes the run when it changed and no animation is on, as save_run.
+// A lost run has no save.
+static void autosave(void) {
+    if (!G.savePath[0] || G.setup || G.flow != BO_FLOW_IDLE || G.dragging) return;
+    if (G.saved && memcmp(G.saved, G.run, sizeof(BORun)) == 0 && G.savedEndless == G.endless) return;
+    if (!G.saved) G.saved = malloc(sizeof(BORun));
+    if (!G.saved) return;
+    memcpy(G.saved, G.run, sizeof(BORun));
+    G.savedEndless = G.endless;
+    if (G.run->state == BO_STATE_GAME_OVER) {
+        bo_save_remove(G.savePath);
+        return;
+    }
+    BOSaveExtra extra = {G.endless};
+    if (!bo_save_write(G.run, &extra, G.savePath)) fprintf(stderr, "save: cannot write %s\n", G.savePath);
+}
+
+static void new_run(void) {
+    // Balatro makes the seed from the place and the time of the cursor.
+    // Here the time of the clock gives the number.
+    char seed[9];
+    bo_random_string((double)time(NULL) * 0.33411983 + fmod(G.time, 1000) * 0.412311010, seed);
+    bo_run_start_deck(G.run, seed, G.setupBack ? G.setupBack : BO_B_RED, G.setupStake ? G.setupStake : 1);
+    reset_views();
     G.endless = 0;
-    G.focus = BO_FOCUS_NONE;
     fprintf(stderr, "new run: seed %s, %s, stake %d\n", seed, bo_center(G.run->back)->key, G.run->stake);
 }
 
@@ -443,8 +470,21 @@ int bo_game_start(const char *love_path, int width, int height) {
     G.run = calloc(1, sizeof(BORun));
     G.setupBack = BO_B_RED;
     G.setupStake = 1;
-    G.setup = 1;
-    new_run();
+    // The save is beside Balatro.love. A saved run goes on at once.
+    const char *slash = strrchr(love_path, '/');
+    if (slash) snprintf(G.savePath, sizeof(G.savePath), "%.*s/save.b4s", (int)(slash - love_path), love_path);
+    BOSaveExtra extra = {0};
+    if (G.savePath[0] && bo_save_read(G.run, &extra, G.savePath)) {
+        G.endless = extra.endless;
+        G.setupBack = G.run->back;
+        G.setupStake = G.run->stake;
+        reset_views();
+        if (G.run->state == BO_STATE_SELECTING || G.run->state == BO_STATE_PACK) sync_hand();
+        fprintf(stderr, "save: resumed %s, ante %d\n", G.run->random.seed, G.run->ante);
+    } else {
+        G.setup = 1;
+        new_run();
+    }
     return 1;
 }
 
@@ -2059,6 +2099,7 @@ void bo_game_frame(double dt) {
         G.fpsTime = G.time;
     }
     update_flow(dt);
+    autosave();
     for (int i = 0; i < G.handCount; i++) move_view(&G.hand[i], dt);
     for (int i = 0; i < G.playCount; i++) move_view(&G.play[i], dt);
     move_items(dt);

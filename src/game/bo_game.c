@@ -1,5 +1,6 @@
 #include "bo_game.h"
 
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <mach/mach.h>
 #include <math.h>
@@ -238,14 +239,80 @@ const char *bo_game_error(void) {
     return G.error;
 }
 
-static BOTexture load_texture(BOZip *zip, const char *name, float scale) {
-    size_t size = 0;
-    unsigned char *png = bo_zip_read(zip, name, &size);
-    BOTexture texture = {0, 0, 0};
-    if (png) {
-        texture = bo_image_texture(png, size, scale);
-        free(png);
+// The cache of the decoded textures: a folder beside Balatro.love. Each
+// file holds a header and the RGBA pixels. A new Balatro.love, with another
+// size or time, makes the cache old.
+static struct {
+    char dir[1024];
+    long long loveSize;
+    long long loveTime;
+} gCache;
+
+typedef struct {
+    char magic[4];  // "B4ST": a texture of Balatro4S.
+    int64_t loveSize, loveTime;
+    int32_t scale100, width, height;
+} BOCacheHeader;
+
+static void cache_path(const char *name, float scale, char *out, size_t size) {
+    const char *base = strrchr(name, '/');
+    base = base ? base + 1 : name;
+    snprintf(out, size, "%s/%s.%d.rgba", gCache.dir, base, (int)lroundf(scale * 100));
+}
+
+static unsigned char *cache_read(const char *path, float scale, int *width, int *height) {
+    FILE *file = fopen(path, "rb");
+    if (!file) return NULL;
+    BOCacheHeader h;
+    unsigned char *pixels = NULL;
+    if (fread(&h, sizeof(h), 1, file) == 1 && memcmp(h.magic, "B4ST", 4) == 0 && h.loveSize == gCache.loveSize &&
+        h.loveTime == gCache.loveTime && h.scale100 == (int)lroundf(scale * 100) && h.width > 0 && h.height > 0 &&
+        h.width <= 8192 && h.height <= 8192) {
+        size_t bytes = (size_t)h.width * h.height * 4;
+        pixels = malloc(bytes);
+        if (pixels && fread(pixels, 1, bytes, file) != bytes) {
+            free(pixels);
+            pixels = NULL;
+        }
+        *width = h.width;
+        *height = h.height;
     }
+    fclose(file);
+    return pixels;
+}
+
+static void cache_write(const char *path, float scale, const unsigned char *pixels, int width, int height) {
+    char temp[1100];
+    snprintf(temp, sizeof(temp), "%s.new", path);
+    FILE *file = fopen(temp, "wb");
+    if (!file) return;
+    BOCacheHeader h = {{'B', '4', 'S', 'T'}, gCache.loveSize, gCache.loveTime, (int32_t)lroundf(scale * 100), width,
+                       height};
+    int ok = fwrite(&h, sizeof(h), 1, file) == 1 && fwrite(pixels, (size_t)width * height * 4, 1, file) == 1;
+    ok = fclose(file) == 0 && ok;
+    if (!ok || rename(temp, path) != 0) remove(temp);
+}
+
+static BOTexture load_texture(BOZip *zip, const char *name, float scale) {
+    BOTexture texture = {0, 0, 0};
+    char path[1100];
+    int width = 0, height = 0;
+    unsigned char *pixels = NULL;
+    if (gCache.dir[0]) {
+        cache_path(name, scale, path, sizeof(path));
+        pixels = cache_read(path, scale, &width, &height);
+    }
+    if (!pixels) {
+        size_t size = 0;
+        unsigned char *png = bo_zip_read(zip, name, &size);
+        if (!png) return texture;
+        pixels = bo_image_decode(png, size, scale, &width, &height);
+        free(png);
+        if (!pixels) return texture;
+        if (gCache.dir[0]) cache_write(path, scale, pixels, width, height);
+    }
+    texture = bo_gfx_texture(pixels, width, height);
+    free(pixels);
     return texture;
 }
 
@@ -499,6 +566,15 @@ int bo_game_start(const char *love_path, int width, int height) {
     double startTime = wall_seconds();
     G.width = width;
     G.height = height;
+    // The cache folder, and the size and the time of Balatro.love.
+    struct stat loveStat;
+    const char *dirEnd = strrchr(love_path, '/');
+    if (dirEnd && stat(love_path, &loveStat) == 0) {
+        snprintf(gCache.dir, sizeof(gCache.dir), "%.*s/cache", (int)(dirEnd - love_path), love_path);
+        mkdir(gCache.dir, 0755);
+        gCache.loveSize = loveStat.st_size;
+        gCache.loveTime = loveStat.st_mtime;
+    }
     BOZip *zip = bo_zip_open(love_path);
     if (!zip) {
         fail("Copy Balatro.love from your copy of Balatro to\n/var/mobile/Media/Balatro4S/Balatro.love\n\n"

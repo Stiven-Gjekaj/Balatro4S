@@ -129,6 +129,7 @@ typedef struct {
     float tx, ty;    // The place that the card goes to, in pixels.
     float tr;        // The angle that the card goes to.
     float delay;     // A new card waits on the deck for this time.
+    float pitch;     // The pitch of the card1 sound when the card moves.
     int fan;         // The card is in the hand: it fans and sways.
     int selected;
 } BOCardView;
@@ -232,6 +233,8 @@ static struct {
     int frames;
     double fpsTime;
     float pitchMod;  // G.PITCH_MOD: the speed of the music.
+    float scorePercent;  // The percent of evaluate_play: the pitch of the score sounds.
+    int soundState;      // The state of the run at the last frame, for its sounds.
 } G = {.dragIndex = -1, .pitchMod = 1};
 
 static void fail(const char *message) {
@@ -381,12 +384,52 @@ static void layout(void) {
     if (G.flow != BO_FLOW_CLEAR) layout_row(G.play, G.playCount, main_area(), G.height * 0.30f, G.cardH * 0.12f, 0);
 }
 
+// A random number from 0 to 1 for the pitch of a sound. It is not the
+// random generator of the run, so the sounds do not change the run.
+static float sound_random(void) {
+    static uint32_t state = 2463534242u;
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return (state >> 8) / 16777216.0f;
+}
+
+// The sounds that wait, as the events of Balatro with a delay.
+static struct {
+    float wait;
+    const char *code;
+    float per, vol;
+} gLater[32];
+
+static void sound_later(float wait, const char *code, float per, float vol) {
+    for (int i = 0; i < 32; i++) {
+        if (gLater[i].code) continue;
+        gLater[i].wait = wait;
+        gLater[i].code = code;
+        gLater[i].per = per;
+        gLater[i].vol = vol;
+        return;
+    }
+}
+
+static void update_later(double dt) {
+    for (int i = 0; i < 32; i++) {
+        if (!gLater[i].code) continue;
+        gLater[i].wait -= (float)dt;
+        if (gLater[i].wait > 0) continue;
+        bo_sound_play(gLater[i].code, gLater[i].per, gLater[i].vol);
+        gLater[i].code = NULL;
+    }
+}
+
 // Moves a card one frame. A card of the hand sways a little, as in
 // align_cards.
 static void move_view(BOCardView *v, double dt) {
     float u = unit();
     if (v->delay > 0) {
         v->delay -= (float)dt;
+        // draw_card: the card1 sound when the card leaves its place.
+        if (v->delay <= 0) bo_sound_play("card1", v->pitch, 0.6f);
         return;
     }
     float tx = v->tx / u, ty = v->ty / u, tr = v->tr;
@@ -418,7 +461,10 @@ static void sync_hand(void) {
                 break;
             }
         }
-        if (view.delay > 0) drawn++;
+        if (view.delay > 0) {
+            view.pitch = 0.85f + 0.2f * drawn / (G.run->hand_size > 1 ? G.run->hand_size : 1);
+            drawn++;
+        }
         // Cerulean Bell: the forced card stays selected.
         if (view.card.forced_selection) view.selected = 1;
         views[count++] = view;
@@ -1232,6 +1278,8 @@ static void play_selected(void) {
         if (G.hand[i].selected && n < BO_MAX_PLAY) {
             played[n] = G.hand[i];
             played[n].selected = 0;
+            played[n].delay = 0.001f + 0.07f * n;
+            played[n].pitch = 0.85f + 0.2f * n / BO_MAX_PLAY;
             n++;
         }
     }
@@ -1265,7 +1313,12 @@ static void discard_selected(void) {
     BOCardView gone[BO_MAX_PLAY];
     int n = 0;
     for (int i = 0; i < G.handCount; i++) {
-        if (G.hand[i].selected && n < BO_MAX_PLAY) gone[n++] = G.hand[i];
+        if (G.hand[i].selected && n < BO_MAX_PLAY) {
+            gone[n] = G.hand[i];
+            gone[n].delay = 0.001f + 0.07f * n;
+            gone[n].pitch = 0.85f + 0.2f * n / BO_MAX_PLAY;
+            n++;
+        }
     }
     if (!bo_run_discard(G.run, mask)) return;
     memcpy(G.play, gone, sizeof(BOCardView) * n);
@@ -1454,6 +1507,7 @@ static void handle_hand_taps(void) {
         if (!G.hand[i].selected && count >= BO_MAX_PLAY) break;
         if (G.hand[i].card.forced_selection) break;
         G.hand[i].selected = !G.hand[i].selected;
+        if (G.hand[i].selected) bo_sound_play("cardSlide1", 1, 1);
         update_preview();
         layout();
         break;
@@ -2519,6 +2573,7 @@ static void draw_focus(void) {
 
 static void toggle_focus(BOFocusArea area, int index) {
     int same = G.focus == area && G.focusIndex == index;
+    if (!same) bo_sound_play("cardSlide1", 1, 1);
     G.focus = same ? BO_FOCUS_NONE : area;
     G.focusIndex = index;
 }

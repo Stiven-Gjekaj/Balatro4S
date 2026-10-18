@@ -55,6 +55,7 @@ enum {
     BO_ID_ACTION,      // The first button of the focused card: Buy, Use, or Sell.
     BO_ID_ACTION_2,    // The second button: Sell.
     BO_ID_SKIP,
+    BO_ID_RUN_INFO,
     BO_ID_BACKGROUND,  // A tap on nothing: the focus goes away.
     BO_ID_HAND_CARD = 100,
     BO_ID_JOKER = 200,
@@ -141,6 +142,7 @@ static struct {
 
     BOFocusArea focus;
     int focusIndex;
+    int showInfo;  // The Run Info screen is open.
 
     // A drag of a joker.
     int dragIndex;  // -1 when no joker is held.
@@ -583,8 +585,10 @@ static void draw_panel(void) {
     snprintf(value, sizeof(value), "%d", run->round);
     draw_label_value("Round", value, bo_rect(pad * 2 + colW, y, colW, h), BO_C_ORANGE);
 
+    BORect info = bo_rect(pad, G.height * 0.875f, inner, G.height * 0.065f);
+    if (bo_ui_button(BO_ID_RUN_INFO, info, BO_C_RED, "Run Info", 1)) G.showInfo = 1;
     snprintf(text, sizeof(text), "Seed %s", run->random.seed);
-    bo_font_draw(text, panelW / 2, G.height * 0.9f, G.height * 0.035f, bo_rgb(BO_C_GREY), BO_ALIGN_CENTER);
+    bo_font_draw(text, panelW / 2, G.height * 0.95f, G.height * 0.032f, bo_rgb(BO_C_GREY), BO_ALIGN_CENTER);
 }
 
 // --- The jokers, the consumables, and the text of a card -----------------
@@ -1447,6 +1451,47 @@ static void draw_pack(void) {
     (void)pack;
 }
 
+// --- Run Info --------------------------------------------------------------
+
+static void draw_run_info(void) {
+    BORun *run = G.run;
+    bo_gfx_rect(0, 0, G.width, G.height, bo_rgba(0x000000, 0.55f));
+    BORect box = bo_rect(G.width * 0.12f, G.height * 0.04f, G.width * 0.76f, G.height * 0.92f);
+    bo_ui_box(box, BO_C_BLACK);
+    float rowH = G.height * 0.062f, size = rowH * 0.62f;
+    bo_font_draw("Poker Hands", box.x + box.w / 2, box.y + 10, rowH * 0.8f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    float y = box.y + rowH * 1.3f;
+    char text[32];
+    for (int h = 0; h < BO_HAND_COUNT; h++) {
+        if (!run->hands[h].visible) continue;
+        BORect row = bo_rect(box.x + 12, y, box.w - 24, rowH - 6);
+        bo_ui_box(row, BO_C_DARK);
+        int level = run->hands[h].level;
+        snprintf(text, sizeof(text), "lvl.%d", level);
+        bo_font_draw(text, row.x + 10, row.y + row.h * 0.18f, size, bo_rgb(level > 1 ? BO_C_ORANGE : BO_C_WHITE),
+                     BO_ALIGN_LEFT);
+        bo_font_draw(bo_hand_name((BOHandType)h, 0), row.x + row.w * 0.16f, row.y + row.h * 0.18f, size,
+                     bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
+        float cw = row.w * 0.13f;
+        BORect chips = bo_rect(row.x + row.w * 0.56f, row.y + 3, cw, row.h - 6);
+        BORect mult = bo_rect(chips.x + cw + row.w * 0.03f, row.y + 3, cw, row.h - 6);
+        bo_ui_box(chips, BO_C_BLUE);
+        bo_ui_box(mult, BO_C_RED);
+        snprintf(text, sizeof(text), "%d", bo_hand_level_chips((BOHandType)h, level));
+        bo_font_draw(text, chips.x + chips.w / 2, chips.y + chips.h * 0.12f, size, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+        bo_font_draw("X", chips.x + cw + row.w * 0.015f, chips.y + chips.h * 0.12f, size, bo_rgb(BO_C_RED),
+                     BO_ALIGN_CENTER);
+        snprintf(text, sizeof(text), "%d", bo_hand_level_mult((BOHandType)h, level));
+        bo_font_draw(text, mult.x + mult.w / 2, mult.y + mult.h * 0.12f, size, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+        snprintf(text, sizeof(text), "# %d", run->hands[h].played);
+        bo_font_draw(text, row.x + row.w - 10, row.y + row.h * 0.18f, size, bo_rgb(BO_C_ORANGE), BO_ALIGN_RIGHT);
+        y += rowH;
+    }
+    // Any tap closes the screen.
+    bo_ui_area(BO_ID_RUN_INFO + 1000, bo_rect(0, 0, G.width, G.height));
+    if (bo_ui_clicked(BO_ID_RUN_INFO + 1000)) G.showInfo = 0;
+}
+
 // --- The frame -------------------------------------------------------------
 
 static void draw_popups(double dt) {
@@ -1543,6 +1588,7 @@ void bo_game_frame(double dt) {
     handle_focus_taps();
     if (G.focus != BO_FOCUS_NONE) draw_focus();
     draw_popups(dt);
+    if (G.showInfo) draw_run_info();
     bo_gfx_flush();
     bo_ui_end();
 }

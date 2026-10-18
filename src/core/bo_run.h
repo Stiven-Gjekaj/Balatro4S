@@ -240,6 +240,10 @@ void bo_run_discard_cards(BORun *run, uint64_t mask, int hook);
 // G.FUNCS.draw_from_deck_to_hand(count): draws count cards.
 void bo_run_draw_cards(BORun *run, int count);
 
+// end_round: the jokers at the end of the round, the cards held in the
+// hand, and the money of the round. The score decides a win or a loss.
+void bo_run_end_round(BORun *run);
+
 // Takes the money of the round and opens the shop.
 void bo_run_cash_out(BORun *run);
 

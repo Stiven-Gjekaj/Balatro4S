@@ -334,7 +334,7 @@ static void add_eval_row(BORun *run, BOEvalKind kind, int index, int count, int 
     eval->total += dollars;
 }
 
-static void end_round(BORun *run) {
+void bo_run_end_round(BORun *run) {
     int game_over = run->chips < run->blind_chips;
     for (int i = 0; i < run->joker_count; i++) {
         BOContext ctx = context_for(BO_CTX_END_OF_ROUND);
@@ -495,7 +495,7 @@ int bo_run_play(BORun *run, uint64_t mask, BOScore *score) {
     run->hands_played_total++;
     run->hands_played++;
     if (run->chips >= run->blind_chips || run->hands_left < 1) {
-        end_round(run);
+        bo_run_end_round(run);
     } else {
         draw_to_hand(run);
         bo_boss_drawn_to_hand(run);
@@ -729,7 +729,7 @@ static int sell_item(BORun *run, BOItem *items, int *count, int index) {
     // A boss that is disabled can leave a round that is already won.
     if (run->state == BO_STATE_SELECTING && run->blind_disabled && bo_blind_info(run->blind)->boss &&
         run->chips >= run->blind_chips) {
-        end_round(run);
+        bo_run_end_round(run);
     }
     return 1;
 }

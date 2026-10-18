@@ -10,6 +10,7 @@
 #include "bo_eval.h"
 #include "bo_pool.h"
 #include "bo_joker.h"
+#include "bo_pack.h"
 #include "bo_rules.h"
 #include "bo_run.h"
 
@@ -191,6 +192,75 @@ static void use_card(BORun *run, BOCenterId center, uint64_t highlighted) {
     print_levels(run);
 }
 
+static void print_state(BORun *run) {
+    printf("hand");
+    for (int i = 0; i < run->hand_count; i++) print_card(&run->hand[i]);
+    printf("\n");
+    printf("deck");
+    for (int i = run->deck_count - 1; i >= 0; i--) print_card(&run->deck[i]);
+    printf("\n");
+    printf("hand_size %d\n", run->hand_size > 0 ? run->hand_size : 0);
+    printf("dollars %d\n", run->dollars);
+    printf("joker_slots %d\n", run->joker_slots);
+    for (int i = 0; i < run->joker_count; i++) {
+        printf("joker_card %d %s%s%s%s\n", i + 1, bo_center(run->jokers[i].center)->key,
+               run->jokers[i].edition ? ":" : "", edition_name(run->jokers[i].edition),
+               run->jokers[i].eternal ? ":eternal" : "");
+    }
+    print_jokers(run);
+    printf("consumable_slots %d\n", run->consumable_slots);
+    for (int i = 0; i < run->consumable_count; i++) {
+        printf("consumable %d %s%s%s\n", i + 1, bo_center(run->consumables[i].center)->key,
+               run->consumables[i].edition ? ":" : "", edition_name(run->consumables[i].edition));
+    }
+    print_levels(run);
+}
+
+#define MAX_STEPS 8
+
+typedef struct {
+    int skip;
+    int index;
+    uint64_t picks;
+} PackStep;
+
+// Opens a pack in the shop, takes the steps, and prints the state.
+static void open_pack(BORun *run, BOCenterId center, const PackStep *steps, int count) {
+    run->state = BO_STATE_SHOP;
+    for (int i = 0; i < run->joker_count; i++) bo_joker_update(run, &run->jokers[i]);
+    BOItem booster = bo_pool_make_item(run, center);
+    bo_run_forget_card(run, center);
+    bo_pack_open(run, center, booster.cost);
+    printf("pack");
+    for (int i = 0; i < run->pack_count; i++) {
+        const BOShopCard *card = &run->pack_cards[i];
+        if (card->is_playing_card) {
+            print_card(&card->card);
+        } else {
+            printf(" %s%s%s", bo_center(card->item.center)->key, card->item.edition ? ":" : "",
+                   edition_name(card->item.edition));
+        }
+    }
+    printf("\n");
+    printf("choices %d\n", run->pack_choices);
+    for (int s = 0; s < count && run->state == BO_STATE_PACK; s++) {
+        if (steps[s].skip) {
+            bo_pack_skip(run);
+            break;
+        }
+        for (int i = 0; i < run->joker_count; i++) bo_joker_update(run, &run->jokers[i]);
+        // Card:update runs for the cards of the pack too.
+        int index = steps[s].index - 1;
+        if (index >= 0 && index < run->pack_count && !run->pack_cards[index].is_playing_card) {
+            bo_joker_update(run, &run->pack_cards[index].item);
+        }
+        int can = bo_pack_can_choose(run, steps[s].index - 1, steps[s].picks);
+        printf("can_choose %s\n", can ? "true" : "false");
+        if (can) bo_pack_choose(run, steps[s].index - 1, steps[s].picks);
+    }
+    print_state(run);
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: scenario FILE\n");
@@ -223,7 +293,9 @@ int main(int argc, char **argv) {
     run->ancient_suit = BO_SPADES;
     run->castle_suit = BO_SPADES;
 
-    BOCenterId useCenter = BO_CENTER_NONE;
+    BOCenterId useCenter = BO_CENTER_NONE, packCenter = BO_CENTER_NONE;
+    PackStep steps[MAX_STEPS];
+    int stepCount = 0;
     uint64_t useMask = 0;
     rewind(file);
     while (fgets(line, sizeof(line), file)) {
@@ -273,6 +345,21 @@ int main(int argc, char **argv) {
         } else if (strcmp(key, "use") == 0) {
             useCenter = bo_center_by_key(words[1]);
             for (int i = 2; i < count; i++) useMask |= (uint64_t)1 << (atoi(words[i]) - 1);
+        } else if (strcmp(key, "deck_cards") == 0) {
+            // Each card goes under the deck, as G.deck:emplace does.
+            for (int i = 1; i < count && run->deck_count < BO_MAX_CARDS; i++) {
+                memmove(&run->deck[1], run->deck, sizeof(BOCard) * run->deck_count);
+                parse_card(run, words[i], &run->deck[0]);
+                run->deck_count++;
+            }
+        } else if (strcmp(key, "open") == 0) {
+            packCenter = bo_center_by_key(words[1]);
+        } else if ((strcmp(key, "choose") == 0 || strcmp(key, "skip") == 0) && stepCount < MAX_STEPS) {
+            PackStep *step = &steps[stepCount++];
+            step->skip = key[0] == 's';
+            step->index = count > 1 ? atoi(words[1]) : 0;
+            step->picks = 0;
+            for (int i = 2; i < count; i++) step->picks |= (uint64_t)1 << (atoi(words[i]) - 1);
         } else if (strcmp(key, "last") == 0) {
             run->last_tarot_planet = bo_center_by_key(words[1]);
         } else if (strcmp(key, "eternal") == 0) {
@@ -285,6 +372,10 @@ int main(int argc, char **argv) {
         }
     }
     fclose(file);
+    if (packCenter != BO_CENTER_NONE) {
+        open_pack(run, packCenter, steps, stepCount);
+        return 0;
+    }
     if (useCenter != BO_CENTER_NONE) {
         use_card(run, useCenter, useMask);
         return 0;

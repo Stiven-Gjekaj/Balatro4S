@@ -25,6 +25,10 @@
 --                          and print the state after it, in place of a play)
 --   last c_key            (G.GAME.last_tarot_planet)
 --   eternal 2             (joker 2 is eternal)
+--   deck_cards S_A H_K    (cards under the deck, in this order)
+--   open p_key            (open a pack in the shop, in place of a play)
+--   choose 2 1 3          (take pack card 2, with cards 1 and 3 of the hand)
+--   skip                  (close the pack)
 -- A card is a key of P_CARDS, then an enhancement, an edition, and a seal.
 
 local dir, file = arg[1], arg[3]
@@ -94,7 +98,7 @@ local function set_ability(card, words)
     end
 end
 
-local plays, holds, use = {}, {}, nil
+local plays, holds, use, pack = {}, {}, nil, nil
 for _, w in ipairs(lines) do
     local key = w[1]
     if key == 'ante' then G.GAME.round_resets.ante = tonumber(w[2])
@@ -130,6 +134,14 @@ for _, w in ipairs(lines) do
         use = {key = w[2], picks = {}}
         for i = 3, #w do use.picks[#use.picks + 1] = tonumber(w[i]) end
     elseif key == 'last' then G.GAME.last_tarot_planet = w[2]
+    elseif key == 'deck_cards' then
+        for i = 2, #w do G.deck:emplace(playing_card(w[i])) end
+    elseif key == 'open' then pack = {key = w[2], steps = {}}
+    elseif key == 'choose' or key == 'skip' then
+        local step = {kind = key, picks = {}}
+        for i = 3, #w do step.picks[#step.picks + 1] = tonumber(w[i]) end
+        step.index = tonumber(w[2])
+        pack.steps[#pack.steps + 1] = step
     elseif key == 'eternal' then G.jokers.cards[tonumber(w[2])]:set_eternal(true)
     end
 end
@@ -168,6 +180,130 @@ local function card_text(c)
     if c.edition then text = text .. ':' .. c.edition.type end
     if c.seal then text = text .. ':' .. c.seal end
     return text
+end
+
+local function print_state()
+    local hand = {}
+    for _, c in ipairs(G.hand.cards) do hand[#hand + 1] = ' ' .. card_text(c) end
+    print('hand' .. table.concat(hand))
+    local deck = {}
+    for i = #G.deck.cards, 1, -1 do deck[#deck + 1] = ' ' .. card_text(G.deck.cards[i]) end
+    print('deck' .. table.concat(deck))
+    print('hand_size ' .. G.hand.config.card_limit)
+    print('dollars ' .. G.GAME.dollars)
+    print('joker_slots ' .. G.jokers.config.card_limit)
+    for i, j in ipairs(G.jokers.cards) do
+        print(string.format('joker_card %d %s%s%s', i, j.config.center.key, j.edition and (':' .. j.edition.type) or '',
+                            j.ability.eternal and ':eternal' or ''))
+    end
+    print_jokers()
+    print('consumable_slots ' .. G.consumeables.config.card_limit)
+    for i, c in ipairs(G.consumeables.cards) do
+        print(string.format('consumable %d %s%s', i, c.config.center.key, c.edition and (':' .. c.edition.type) or ''))
+    end
+    print_levels()
+end
+
+local function headless_use()
+    set_consumeable_usage = B.real.set_consumeable_usage
+    G.PROFILES[1].consumeable_usage = {}
+    G.save_settings = function() end
+    G.CONTROLLER = {locks = {}}
+    G.STAGE = G.STAGES.RUN
+    Card.update_alert = function() end
+    get_joker_win_sticker = function() return nil end
+end
+
+if pack then
+    -- A pack from the shop, as G.FUNCS.use_card and Card:open do it.
+    headless_use()
+    Card.explode = function(self) self:remove() end
+    G.STATE = G.STATES.SHOP
+    G.pack_cards = CardArea(0, 0, 1, 1, {card_limit = 5, type = 'consumeable'})
+    G.GAME.current_round.used_packs = {}
+    local booster = Card(0, 0, 1, 1, nil, G.P_CENTERS[pack.key])
+    for _, c in ipairs(G.jokers.cards) do c:update(0) end
+    G.GAME.PACK_INTERRUPT = G.STATE
+    booster:open()
+    B.manager:run_all()
+    if G.STATE == G.STATES.TAROT_PACK or G.STATE == G.STATES.SPECTRAL_PACK then
+        G.FUNCS.draw_from_deck_to_hand()
+        B.manager:run_all()
+    end
+    local cards = {}
+    for _, c in ipairs(G.pack_cards.cards) do
+        local text = c.config.center.key .. (c.edition and (':' .. c.edition.type) or '')
+        if c.ability.set == 'Default' or c.ability.set == 'Enhanced' then text = card_text(c) end
+        cards[#cards + 1] = ' ' .. text
+    end
+    print('pack' .. table.concat(cards))
+    print('choices ' .. G.GAME.pack_choices)
+    local function finish()
+        G.FUNCS.draw_from_hand_to_deck()
+        B.manager:run_all()
+        for i = #G.pack_cards.cards, 1, -1 do G.pack_cards.cards[i]:remove() end
+        B.manager:run_all()
+    end
+    local open = true
+    for _, step in ipairs(pack.steps) do
+        if not open then break end
+        if step.kind == 'skip' then
+            for i = 1, #G.jokers.cards do G.jokers.cards[i]:calculate_joker({skipping_booster = true}) end
+            finish()
+            open = false
+        else
+            local card = G.pack_cards.cards[step.index]
+            -- The cards of the hand get their places from left to right, as
+            -- align_cards gives them. Death looks for the card on the right.
+            for i, c in ipairs(G.hand.cards) do c.T.x = i end
+            G.hand.highlighted = {}
+            for _, p in ipairs(step.picks) do G.hand.highlighted[#G.hand.highlighted + 1] = G.hand.cards[p] end
+            for _, c in ipairs(G.jokers.cards) do c:update(0) end
+            if card then card:update(0) end
+            local can
+            if not card then
+                can = false
+            elseif card.ability.consumeable then
+                can = card:can_use_consumeable(nil, true)
+                if can and card.ability.name == 'Ankh' and #G.jokers.cards >= G.jokers.config.card_limit then can = false end
+            else
+                can = card.ability.set ~= 'Joker' or (card.edition and card.edition.negative) or
+                      #G.jokers.cards < G.jokers.config.card_limit
+            end
+            print('can_choose ' .. tostring(can and true or false))
+            if can then
+                local area = card.area
+                area:remove_card(card)
+                if card.ability.consumeable then
+                    card:use_consumeable(area)
+                    for i = 1, #G.jokers.cards do
+                        G.jokers.cards[i]:calculate_joker({using_consumeable = true, consumeable = card})
+                    end
+                    B.manager:run_all()
+                    card:remove()
+                elseif card.ability.set == 'Joker' then
+                    card:add_to_deck()
+                    G.jokers:emplace(card)
+                else
+                    G.playing_card = (G.playing_card and G.playing_card + 1) or 1
+                    G.deck:emplace(card)
+                    card.playing_card = G.playing_card
+                    playing_card_joker_effects({card})
+                    card:add_to_deck()
+                    table.insert(G.playing_cards, card)
+                end
+                B.manager:run_all()
+                if G.GAME.pack_choices > 1 then
+                    G.GAME.pack_choices = G.GAME.pack_choices - 1
+                else
+                    finish()
+                    open = false
+                end
+            end
+        end
+    end
+    print_state()
+    os.exit(0)
 end
 
 if use then

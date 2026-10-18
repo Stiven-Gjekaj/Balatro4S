@@ -3,9 +3,10 @@
 (tools/oracle.sh score) and with Balatro4S (build/fuzz/scenario), and
 prints each scenario where the results are not the same.
 
-Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--keep]
+Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--pack] [--keep]
 With --use, each scenario uses a Tarot, Planet, or Spectral card on the hand
-in place of a play.
+in place of a play. With --pack, each scenario opens a booster pack in the
+shop and takes some of its cards.
 """
 
 import os
@@ -91,6 +92,48 @@ def use_scenario(rng, jokers, consumables):
     return "\n".join(lines) + "\n"
 
 
+def all_packs():
+    keys = []
+    with open(os.path.join(ROOT, "src", "core", "bo_data.c")) as f:
+        for line in f:
+            m = re.match(r'\s*\{"(p_[a-z0-9_]+)"', line)
+            if m:
+                keys.append(m.group(1))
+    return keys
+
+
+PACK_JOKERS = ["j_hallucination", "j_red_card", "j_hologram", "j_constellation", "j_glass", "j_caino",
+               "j_merry_andy", "j_juggler"]
+
+
+def pack_scenario(rng, jokers, consumables, packs):
+    lines = ["seed " + "".join(rng.choice("ABCDEFGHJKLMNPQRSTUVWXYZ123456789") for _ in range(8))]
+    lines.append("ante %d" % rng.randint(1, 8))
+    lines.append("dollars %d" % rng.randint(0, 40))
+    pool = PACK_JOKERS + rng.sample(jokers, 6)
+    chosen = rng.sample(pool, rng.randint(0, 5))
+    for key in chosen:
+        words = ["joker", key]
+        if rng.random() < 0.2:
+            words.append("edition=" + rng.choice(EDITIONS + ["negative"]))
+        lines.append(" ".join(words))
+    for _ in range(rng.randint(0, 2)):
+        lines.append("consumable " + rng.choice(consumables))
+    if rng.random() < 0.5:
+        lines.append("last " + rng.choice(consumables))
+    deck = [card(rng) for _ in range(rng.randint(0, 20))]
+    if deck:
+        lines.append("deck_cards " + " ".join(deck))
+    lines.append("open " + rng.choice(packs))
+    for _ in range(rng.randint(1, 3)):
+        if rng.random() < 0.15:
+            lines.append("skip")
+            break
+        picks = sorted(rng.sample(range(1, 9), rng.choice([0, 1, 1, 2, 3])))
+        lines.append("choose %d" % rng.randint(1, 5) + "".join(" %d" % p for p in picks))
+    return "\n".join(lines) + "\n"
+
+
 def card(rng, plain=False):
     token = rng.choice(SUITS) + "_" + rng.choice(RANKS)
     if plain:
@@ -163,6 +206,7 @@ def main():
     rng = random.Random(int(args[1]) if len(args) > 1 else 1)
     jokers = all_jokers()
     consumables = all_consumables()
+    packs = all_packs()
     if "--jokers" in sys.argv:
         jokers = sys.argv[sys.argv.index("--jokers") + 1].split(",")
     os.makedirs(OUT, exist_ok=True)
@@ -172,7 +216,12 @@ def main():
                     if f.endswith(".c")] + ["-lz", "-o", os.path.join(OUT, "scenario")], check=True)
     failures = 0
     for i in range(count):
-        text = use_scenario(rng, jokers, consumables) if "--use" in sys.argv else scenario(rng, jokers)
+        if "--pack" in sys.argv:
+            text = pack_scenario(rng, jokers, consumables, packs)
+        elif "--use" in sys.argv:
+            text = use_scenario(rng, jokers, consumables)
+        else:
+            text = scenario(rng, jokers)
         path = os.path.join(OUT, "case%d.txt" % i)
         with open(path, "w") as f:
             f.write(text)

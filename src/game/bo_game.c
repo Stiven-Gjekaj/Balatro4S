@@ -17,6 +17,7 @@
 #include "bo_image.h"
 #include "bo_joker.h"
 #include "bo_luatab.h"
+#include "bo_motion.h"
 #include "bo_pack.h"
 #include "bo_rich.h"
 #include "bo_rules.h"
@@ -90,9 +91,11 @@ typedef enum {
 
 typedef struct {
     BOCard card;
-    float x, y;
-    float tx, ty;
-    float pulse;  // A short grow when the card scores, from 1 down to 0.
+    BOMotion m;      // The place that shows, in the units of the game.
+    float tx, ty;    // The place that the card goes to, in pixels.
+    float tr;        // The angle that the card goes to.
+    float delay;     // A new card waits on the deck for this time.
+    int fan;         // The card is in the hand: it fans and sways.
     int selected;
 } BOCardView;
 
@@ -100,8 +103,8 @@ typedef struct {
 // by the sort_id, so that a joker keeps its place when another one leaves.
 typedef struct {
     uint32_t sort_id;
-    float x, y;
-    float pulse;
+    float x, y;  // The place that shows, in pixels.
+    BOMotion m;
 } BOItemView;
 
 typedef struct {
@@ -228,16 +231,44 @@ static float slot_x(BORect area, int i, int count) {
     return area.x + (area.w - total) / 2 + step * i;
 }
 
-static void layout_row(BOCardView *cards, int count, BORect area, float y, float lift) {
+// The pixels of one unit of the game.
+static float unit(void) {
+    return G.cardW / (float)BO_MOTION_CARD_W;
+}
+
+// With fan, the cards of the hand turn and drop as align_cards puts them.
+static void layout_row(BOCardView *cards, int count, BORect area, float y, float lift, int fan) {
     for (int i = 0; i < count; i++) {
         cards[i].tx = slot_x(area, i, count);
         cards[i].ty = y - (cards[i].selected ? lift : 0);
+        cards[i].tr = 0;
+        cards[i].fan = fan;
+        if (fan) {
+            cards[i].ty += bo_motion_fan_drop(i, count) * unit();
+            cards[i].tr = bo_motion_fan_angle(i, count, 0.2f);
+        }
     }
 }
 
 static void layout(void) {
-    layout_row(G.hand, G.handCount, main_area(), hand_top(), G.cardH * 0.2f);
-    if (G.flow != BO_FLOW_CLEAR) layout_row(G.play, G.playCount, main_area(), G.height * 0.30f, G.cardH * 0.12f);
+    layout_row(G.hand, G.handCount, main_area(), hand_top(), G.cardH * 0.2f, 1);
+    if (G.flow != BO_FLOW_CLEAR) layout_row(G.play, G.playCount, main_area(), G.height * 0.30f, G.cardH * 0.12f, 0);
+}
+
+// Moves a card one frame. A card of the hand sways a little, as in
+// align_cards.
+static void move_view(BOCardView *v, double dt) {
+    float u = unit();
+    if (v->delay > 0) {
+        v->delay -= (float)dt;
+        return;
+    }
+    float tx = v->tx / u, ty = v->ty / u, tr = v->tr;
+    if (v->fan) {
+        tr += 0.02f * sinf(2 * (float)G.time + tx);
+        ty += 0.03f * sinf(0.666f * (float)G.time + tx);
+    }
+    bo_motion_step(&v->m, tx, ty, tr, 1, dt, G.time);
 }
 
 // Makes the cards on the screen follow the hand of the run. A card that
@@ -246,13 +277,14 @@ static void update_preview(void);
 
 static void sync_hand(void) {
     BOCardView views[BO_MAX_HAND];
-    int count = 0;
+    int count = 0, drawn = 0;
     for (int i = 0; i < G.run->hand_count; i++) {
         BOCardView view;
         memset(&view, 0, sizeof(view));
         view.card = G.run->hand[i];
-        view.x = deck_x();
-        view.y = hand_top();
+        // A new card comes from the deck. The draws come one after another.
+        bo_motion_place(&view.m, deck_x() / unit(), hand_top() / unit(), 0);
+        view.delay = 0.001f + 0.07f * drawn;
         for (int j = 0; j < G.handCount; j++) {
             if (G.hand[j].card.uid == view.card.uid) {
                 view = G.hand[j];
@@ -260,6 +292,7 @@ static void sync_hand(void) {
                 break;
             }
         }
+        if (view.delay > 0) drawn++;
         // Cerulean Bell: the forced card stays selected.
         if (view.card.forced_selection) view.selected = 1;
         views[count++] = view;
@@ -274,7 +307,8 @@ static void sync_hand(void) {
 static void sync_items(BOItemView *views, int *viewCount, const BOItem *items, int count, BORect area) {
     BOItemView next[BO_MAX_JOKERS];
     for (int i = 0; i < count && i < BO_MAX_JOKERS; i++) {
-        BOItemView view = {items[i].sort_id, slot_x(area, i, count), area.y, 0};
+        BOItemView view = {items[i].sort_id, slot_x(area, i, count), area.y, {0}};
+        bo_motion_place(&view.m, view.x / unit(), view.y / unit(), 0);
         for (int j = 0; j < *viewCount; j++) {
             if (views[j].sort_id == items[i].sort_id) {
                 view = views[j];
@@ -501,9 +535,10 @@ static void draw_playing_card(const BOCard *card, float x, float y, float w, flo
 }
 
 static void draw_view(const BOCardView *view) {
-    float grow = 1 + view->pulse * 0.12f;
-    float w = G.cardW * grow, h = G.cardH * grow;
-    draw_playing_card(&view->card, view->x - (w - G.cardW) / 2, view->y - (h - G.cardH) / 2, w, h);
+    float u = unit(), x = view->m.x * u, y = view->m.y * u;
+    bo_gfx_transform(view->m.r, view->m.scale, x + G.cardW / 2, y + G.cardH / 2);
+    draw_playing_card(&view->card, x, y, G.cardW, G.cardH);
+    bo_gfx_transform(0, 1, 0, 0);
 }
 
 static void draw_item(const BOItem *item, float x, float y, float w, float h) {
@@ -547,6 +582,13 @@ static void draw_item(const BOItem *item, float x, float y, float w, float h) {
         const char *label = item->eternal ? "Eternal" : item->perishable ? "Perishable" : "Rental";
         bo_font_draw(label, x + w / 2, y + h - h * 0.14f, h * 0.1f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
     }
+}
+
+// Draws a joker or a consumable with the turn and the size of its motion.
+static void draw_item_view(const BOItem *item, const BOItemView *v) {
+    bo_gfx_transform(v->m.r, v->m.scale, v->x + G.cardW / 2, v->y + G.cardH / 2);
+    draw_item(item, v->x, v->y, G.cardW, G.cardH);
+    bo_gfx_transform(0, 1, 0, 0);
 }
 
 static float tag_size(void) {
@@ -740,25 +782,18 @@ static void draw_items(void) {
                  bo_rgb(BO_C_WHITE), BO_ALIGN_RIGHT);
     for (int i = 0; i < run->consumable_count; i++) {
         BOItemView *v = &G.consumableViews[i];
-        int focused = G.focus == BO_FOCUS_CONSUMABLE && G.focusIndex == i;
-        float y = v->y - (focused ? G.cardH * 0.12f : 0);
-        float grow = 1 + v->pulse * 0.12f;
-        draw_item(&run->consumables[i], v->x - G.cardW * (grow - 1) / 2, y - G.cardH * (grow - 1) / 2, G.cardW * grow,
-                  G.cardH * grow);
-        bo_ui_area(BO_ID_CONSUMABLE + i, bo_rect(v->x, y, G.cardW, G.cardH));
+        draw_item_view(&run->consumables[i], v);
+        bo_ui_area(BO_ID_CONSUMABLE + i, bo_rect(v->x, v->y, G.cardW, G.cardH));
     }
     for (int i = 0; i < run->joker_count; i++) {
         if (G.dragging && i == G.dragIndex) continue;
         BOItemView *v = &G.jokerViews[i];
-        int focused = G.focus == BO_FOCUS_JOKER && G.focusIndex == i;
-        float y = v->y - (focused ? G.cardH * 0.12f : 0);
-        float grow = 1 + v->pulse * 0.12f;
-        draw_item(&run->jokers[i], v->x - G.cardW * (grow - 1) / 2, y - G.cardH * (grow - 1) / 2, G.cardW * grow,
-                  G.cardH * grow);
-        bo_ui_area(BO_ID_JOKER + i, bo_rect(v->x, y, G.cardW, G.cardH));
+        draw_item_view(&run->jokers[i], v);
+        bo_ui_area(BO_ID_JOKER + i, bo_rect(v->x, v->y, G.cardW, G.cardH));
     }
-    if (G.dragging && G.dragIndex >= 0 && G.dragIndex < run->joker_count) {
-        draw_item(&run->jokers[G.dragIndex], G.dragX - G.cardW / 2, jokers.y - G.cardH * 0.1f, G.cardW, G.cardH);
+    // The held joker is on top of the others.
+    if (G.dragging && G.dragIndex >= 0 && G.dragIndex < G.jokerViewCount) {
+        draw_item_view(&run->jokers[G.dragIndex], &G.jokerViews[G.dragIndex]);
     }
 }
 
@@ -980,41 +1015,43 @@ static void discard_selected(void) {
 }
 
 // The place on the screen of the card of a score event.
-static void event_place(const BOScoreEvent *event, float *x, float *y, float **pulse) {
-    static float none;
-    *pulse = &none;
+static void event_place(const BOScoreEvent *event, float *x, float *y, BOMotion **motion) {
+    static BOMotion none;
+    *motion = &none;
     switch (event->area) {
     case BO_AREA_PLAY:
         *x = G.play[event->index].tx + G.cardW / 2;
         *y = G.play[event->index].ty - G.height * 0.07f;
-        *pulse = &G.play[event->index].pulse;
+        *motion = &G.play[event->index].m;
         break;
     case BO_AREA_HAND:
         *x = G.hand[event->index].tx + G.cardW / 2;
         *y = G.hand[event->index].ty - G.height * 0.07f;
-        *pulse = &G.hand[event->index].pulse;
+        *motion = &G.hand[event->index].m;
         break;
     case BO_AREA_JOKER:
         if (event->index < G.jokerViewCount) {
             *x = G.jokerViews[event->index].x + G.cardW / 2;
             *y = G.jokerViews[event->index].y + G.cardH + G.height * 0.01f;
-            *pulse = &G.jokerViews[event->index].pulse;
+            *motion = &G.jokerViews[event->index].m;
         }
         break;
     case BO_AREA_CONSUMABLE:
         if (event->index < G.consumableViewCount) {
             *x = G.consumableViews[event->index].x + G.cardW / 2;
             *y = G.consumableViews[event->index].y + G.cardH + G.height * 0.01f;
-            *pulse = &G.consumableViews[event->index].pulse;
+            *motion = &G.consumableViews[event->index].m;
         }
         break;
     }
 }
 
 static void show_event(const BOScoreEvent *event) {
-    float x = G.width / 2, y = G.height / 2, *pulse;
-    event_place(event, &x, &y, &pulse);
-    *pulse = 1;
+    float x = G.width / 2, y = G.height / 2;
+    BOMotion *motion;
+    event_place(event, &x, &y, &motion);
+    // card_eval_status_text: juice_up(0.6, 0.1).
+    bo_motion_juice(motion, 0.6f, 0.1f, G.time);
     char text[24];
     unsigned int color = BO_C_WHITE;
     switch (event->kind) {
@@ -1757,10 +1794,6 @@ static void draw_popups(double dt) {
     }
 }
 
-static void approach(float *value, float target, double dt) {
-    *value += (target - *value) * (float)(1 - exp(-dt * 12));
-}
-
 // Counts a shown number up to its value in about half a second.
 static void count_to(double *shown, double value, double dt) {
     if (fabs(value - *shown) < 1) {
@@ -1846,6 +1879,32 @@ static void update_background(double dt) {
     G.backSpinTime += (float)dt * G.backSpin;
 }
 
+// The jokers fan a little and sway, as align_cards puts them. A focused
+// card lifts, and a held joker follows the finger.
+static void move_item_row(BOItemView *views, int count, BORect area, BOFocusArea focus, double dt) {
+    float u = unit();
+    for (int i = 0; i < count; i++) {
+        BOItemView *v = &views[i];
+        float tx = slot_x(area, i, count), ty = area.y, tr = 0;
+        if (G.focus == focus && G.focusIndex == i) ty -= G.cardH * 0.12f;
+        if (focus == BO_FOCUS_JOKER) {
+            tr = bo_motion_fan_angle(i, count, 0.1f) + 0.02f * sinf(2 * (float)G.time + tx / u);
+            if (G.dragging && i == G.dragIndex) {
+                tx = G.dragX - G.cardW / 2;
+                ty = area.y - G.cardH * 0.1f;
+            }
+        }
+        bo_motion_step(&v->m, tx / u, ty / u, tr, 1, dt, G.time);
+        v->x = v->m.x * u;
+        v->y = v->m.y * u;
+    }
+}
+
+static void move_items(double dt) {
+    move_item_row(G.jokerViews, G.jokerViewCount, joker_area(), BO_FOCUS_JOKER, dt);
+    move_item_row(G.consumableViews, G.consumableViewCount, consumable_area(), BO_FOCUS_CONSUMABLE, dt);
+}
+
 void bo_game_frame(double dt) {
     bo_debug_poll(dt);
     G.time += dt;
@@ -1857,26 +1916,9 @@ void bo_game_frame(double dt) {
         G.fpsTime = G.time;
     }
     update_flow(dt);
-    BOCardView *areas[2] = {G.hand, G.play};
-    int counts[2] = {G.handCount, G.playCount};
-    for (int a = 0; a < 2; a++) {
-        for (int i = 0; i < counts[a]; i++) {
-            approach(&areas[a][i].x, areas[a][i].tx, dt);
-            approach(&areas[a][i].y, areas[a][i].ty, dt);
-            areas[a][i].pulse = fmaxf(0, areas[a][i].pulse - (float)dt * 4);
-        }
-    }
-    BORect jokers = joker_area(), consumables = consumable_area();
-    for (int i = 0; i < G.jokerViewCount; i++) {
-        approach(&G.jokerViews[i].x, slot_x(jokers, i, G.jokerViewCount), dt);
-        approach(&G.jokerViews[i].y, jokers.y, dt);
-        G.jokerViews[i].pulse = fmaxf(0, G.jokerViews[i].pulse - (float)dt * 4);
-    }
-    for (int i = 0; i < G.consumableViewCount; i++) {
-        approach(&G.consumableViews[i].x, slot_x(consumables, i, G.consumableViewCount), dt);
-        approach(&G.consumableViews[i].y, consumables.y, dt);
-        G.consumableViews[i].pulse = fmaxf(0, G.consumableViews[i].pulse - (float)dt * 4);
-    }
+    for (int i = 0; i < G.handCount; i++) move_view(&G.hand[i], dt);
+    for (int i = 0; i < G.playCount; i++) move_view(&G.play[i], dt);
+    move_items(dt);
     // The tallies of the jokers, as Card:update keeps them.
     for (int i = 0; i < G.run->joker_count; i++) bo_joker_update(G.run, &G.run->jokers[i]);
     if (G.flow != BO_FLOW_SCORE) count_to(&G.shownRound, G.run->chips, dt);

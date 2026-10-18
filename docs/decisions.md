@@ -81,3 +81,23 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
   (`tools/oracle.sh`). The LuaJIT of Homebrew is built with the fused
   multiply-add in `math.randomseed`, and gives other numbers. The tests hold
   the numbers of the oracle. They do not read Balatro.love.
+
+## The jokers
+
+- **All 150 jokers score as in Balatro** (0.3, 2026-10-18). `bo_joker`
+  ports `Card:calculate_joker` for each context, and `bo_eval` ports
+  `G.FUNCS.evaluate_play`. `tools/fuzz.py` plays random hands with random
+  jokers in this code and in the code of Balatro (`tools/headless.lua`).
+  10000 of 10000 cases give the same chips, mult, and money.
+- **The To Do List is not in the fuzzer.** Balatro picks its next hand with
+  `pairs()` over a table with string keys. LuaJIT hashes strings with a new
+  random value in each process, so this order changes from one start of
+  Balatro to the next. Balatro4S uses one fixed order.
+- **The tallies of the jokers do not change during a hand.** Balatro keeps
+  the count of Steel cards and of Stone cards in `Card:update`, which runs
+  one time in each frame. `bo_joker_update` does the same before a hand, so
+  that Vampire does not change the count in the middle of the hand.
+- **The money of a hand comes at the end.** Balatro adds money with events
+  that run after the score. Balatro4S keeps the money in
+  `pending_dollars` until the hand ends, so that Bull and Bootstraps see
+  the same money as in Balatro.

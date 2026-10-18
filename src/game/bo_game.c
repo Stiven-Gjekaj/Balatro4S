@@ -135,6 +135,7 @@ static struct {
     BOTexture vouchers;  // Vouchers.png.
     BOTexture boosters;  // boosters.png.
     BOTexture tags;      // tags.png.
+    BOTexture stickers;  // stickers.png: Eternal, Perishable, Rental, and the stakes.
     int effects;         // The shaders of the editions compiled.
     // The background: its three colours, its contrast, and its spin.
     BOColor backC, backL, backD;
@@ -396,6 +397,7 @@ int bo_game_start(const char *love_path, int width, int height) {
     G.vouchers = load_texture(zip, "resources/textures/2x/Vouchers.png", scale);
     G.boosters = load_texture(zip, "resources/textures/2x/boosters.png", scale);
     G.tags = load_texture(zip, "resources/textures/2x/tags.png", scale);
+    G.stickers = load_texture(zip, "resources/textures/2x/stickers.png", scale);
 
     size_t fontSize = 0;
     unsigned char *font = bo_zip_read(zip, "resources/fonts/m6x11plus.ttf", &fontSize);
@@ -595,10 +597,11 @@ static void draw_item(const BOItem *item, float x, float y, float w, float h) {
         draw_cell(layer.texture, layer.columns, layer.rows, c->soul_x, c->soul_y, x, y - h * 0.02f + bob, w, h, white);
     }
     if (item->debuffed) bo_gfx_round_rect(x, y, w, h, w * 0.06f, bo_rgba(0x000000, 0.45f));
-    if (item->eternal || item->perishable || item->rental) {
-        const char *label = item->eternal ? "Eternal" : item->perishable ? "Perishable" : "Rental";
-        bo_font_draw(label, x + w / 2, y + h - h * 0.14f, h * 0.1f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
-    }
+    // The stickers of the stakes: shared_sticker_eternal, _perishable, and
+    // _rental in stickers.png.
+    if (item->eternal) draw_cell(&G.stickers, 5, 3, 0, 0, x, y, w, h, white);
+    if (item->perishable) draw_cell(&G.stickers, 5, 3, 0, 2, x, y, w, h, white);
+    if (item->rental) draw_cell(&G.stickers, 5, 3, 1, 2, x, y, w, h, white);
 }
 
 // Draws a joker or a consumable with the turn and the size of its motion.
@@ -2120,6 +2123,15 @@ void bo_game_debug(const char *line) {
             bo_voucher_apply(G.run, center);
         }
         fprintf(stderr, "debug: voucher %s\n", word);
+    } else if (sscanf(line, "sticker %63s", word) == 1) {
+        // A sticker on the last joker.
+        if (G.run->joker_count > 0) {
+            BOItem *joker = &G.run->jokers[G.run->joker_count - 1];
+            if (strcmp(word, "eternal") == 0) joker->eternal = 1;
+            if (strcmp(word, "perishable") == 0) joker->perishable = 1, joker->perish_tally = 5;
+            if (strcmp(word, "rental") == 0) joker->rental = 1;
+        }
+        fprintf(stderr, "debug: sticker %s\n", word);
     } else if (sscanf(line, "deck %63s", word) == 1) {
         // A new run with this deck.
         BOCenterId center = bo_center_by_key(word);

@@ -659,30 +659,46 @@ static void draw_cash_out(void) {
         return;
     }
     float y = inner.y + G.height * 0.15f, rowH = G.height * 0.07f, size = G.height * 0.045f;
-    const BOBlindInfo *info = bo_blind_info(run->blind);
-    draw_blind_chip(run->blind, inner.x + 16, y, rowH);
-    bo_font_draw(info->name, inner.x + 24 + rowH, y + rowH * 0.2f, size, bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
-    snprintf(value, sizeof(value), "%.*s", run->eval.blind, "$$$$$$$$$$");
-    bo_font_draw(value, inner.x + inner.w - 16, y + rowH * 0.2f, size, bo_rgb(BO_C_MONEY), BO_ALIGN_RIGHT);
-    y += rowH + 10;
-    bo_gfx_rect(inner.x + 16, y, inner.w - 32, 2, bo_rgb(BO_C_L_BLACK));
-    y += 14;
-    if (run->eval.hands > 0) {
-        snprintf(text, sizeof(text), "%d", run->eval.hands);
-        bo_font_draw(text, inner.x + 16, y, size, bo_rgb(BO_C_BLUE), BO_ALIGN_LEFT);
-        bo_font_draw("Remaining Hands ($1 each)", inner.x + 16 + bo_font_width(text, size) + 10, y, size,
-                     bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
-        snprintf(value, sizeof(value), "$%d", run->eval.hands);
+    for (int r = 0; r < run->eval.row_count; r++) {
+        const BOEvalRow *row = &run->eval.rows[r];
+        if (row->kind == BO_EVAL_BLIND) {
+            const BOBlindInfo *info = bo_blind_info(run->blind);
+            draw_blind_chip(run->blind, inner.x + 16, y, rowH);
+            bo_font_draw(info->name, inner.x + 24 + rowH, y + rowH * 0.2f, size, bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
+            snprintf(value, sizeof(value), "%.*s", row->dollars, "$$$$$$$$$$");
+            bo_font_draw(value, inner.x + inner.w - 16, y + rowH * 0.2f, size, bo_rgb(BO_C_MONEY), BO_ALIGN_RIGHT);
+            y += rowH + 10;
+            bo_gfx_rect(inner.x + 16, y, inner.w - 32, 2, bo_rgb(BO_C_L_BLACK));
+            y += 14;
+            continue;
+        }
+        const char *label = "";
+        unsigned int color = BO_C_WHITE;
+        char count[16] = "";
+        if (row->kind == BO_EVAL_HANDS) {
+            snprintf(count, sizeof(count), "%d", row->count);
+            label = "Remaining Hands ($1 each)";
+            color = BO_C_BLUE;
+        } else if (row->kind == BO_EVAL_DISCARDS) {
+            snprintf(count, sizeof(count), "%d", row->count);
+            label = "Remaining Discards ($1 each)";
+            color = BO_C_RED;
+        } else if (row->kind == BO_EVAL_INTEREST) {
+            snprintf(count, sizeof(count), "%d", row->count);
+            label = "Interest ($1 per $5)";
+            color = BO_C_MONEY;
+        } else if (row->kind == BO_EVAL_JOKER) {
+            label = bo_center(run->jokers[row->index].center)->name;
+        }
+        float x = inner.x + 16;
+        if (count[0]) {
+            bo_font_draw(count, x, y, size, bo_rgb(color), BO_ALIGN_LEFT);
+            x += bo_font_width(count, size) + 10;
+        }
+        bo_font_draw(label, x, y, size, bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
+        snprintf(value, sizeof(value), "$%d", row->dollars);
         bo_font_draw(value, inner.x + inner.w - 16, y, size, bo_rgb(BO_C_MONEY), BO_ALIGN_RIGHT);
         y += rowH;
-    }
-    if (run->eval.interest > 0) {
-        snprintf(text, sizeof(text), "%d", run->eval.interest);
-        bo_font_draw(text, inner.x + 16, y, size, bo_rgb(BO_C_MONEY), BO_ALIGN_LEFT);
-        bo_font_draw("Interest ($1 per $5, 5 max)", inner.x + 16 + bo_font_width(text, size) + 10, y, size,
-                     bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
-        snprintf(value, sizeof(value), "$%d", run->eval.interest);
-        bo_font_draw(value, inner.x + inner.w - 16, y, size, bo_rgb(BO_C_MONEY), BO_ALIGN_RIGHT);
     }
 }
 

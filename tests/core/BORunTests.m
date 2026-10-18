@@ -44,14 +44,19 @@ BO_TEST(test_run_beats_a_blind_and_cashes_out) {
     BO_EQUAL_INT(run->state, BO_STATE_ROUND_EVAL);
     // $3 for the Small Blind, $3 for the 3 hands that are left, and no
     // interest on $4.
-    BO_EQUAL_INT(run->eval.blind, 3);
-    BO_EQUAL_INT(run->eval.hands, 3);
-    BO_EQUAL_INT(run->eval.interest, 0);
+    BO_EQUAL_INT(run->eval.row_count, 2);
+    BO_EQUAL_INT(run->eval.rows[0].kind, BO_EVAL_BLIND);
+    BO_EQUAL_INT(run->eval.rows[0].dollars, 3);
+    BO_EQUAL_INT(run->eval.rows[1].kind, BO_EVAL_HANDS);
+    BO_EQUAL_INT(run->eval.rows[1].dollars, 3);
+    BO_EQUAL_INT(run->eval.total, 6);
     bo_run_cash_out(run);
     BO_EQUAL_INT(run->dollars, 10);
     BO_EQUAL_INT(run->chips, 0);
     BO_EQUAL_INT(run->deck_count, 52);
     BO_EQUAL_INT(run->slot, BO_SLOT_BIG);
+    BO_EQUAL_INT(run->state, BO_STATE_SHOP);
+    bo_run_end_shop(run);
     BO_EQUAL_INT(run->state, BO_STATE_BLIND_SELECT);
     BO_EQUAL_INT(bo_run_slot_chips(run, BO_SLOT_BIG), 450);
     free(run);
@@ -65,7 +70,9 @@ BO_TEST(test_run_gives_interest_up_to_the_cap) {
     run->blind_chips = 1;
     BOScore score;
     bo_run_play(run, 0x1, &score);
-    BO_EQUAL_INT(run->eval.interest, 5);
+    const BOEvalRow *last = &run->eval.rows[run->eval.row_count - 1];
+    BO_EQUAL_INT(last->kind, BO_EVAL_INTEREST);
+    BO_EQUAL_INT(last->dollars, 5);
     free(run);
 }
 
@@ -104,6 +111,7 @@ BO_TEST(test_run_goes_to_the_next_ante_after_the_boss) {
         run->blind_chips = 1;
         bo_run_play(run, 0x1, &score);
         bo_run_cash_out(run);
+        bo_run_end_shop(run);
     }
     BO_EQUAL_INT(run->ante, 2);
     BO_EQUAL_INT(run->slot, BO_SLOT_SMALL);

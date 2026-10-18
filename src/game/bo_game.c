@@ -684,31 +684,30 @@ typedef struct {
     int enabled;
 } BOAction;
 
-// The box with the name, the badge, and the text of a card, under or over
-// the card, with up to two buttons. Returns the number of the button that
-// is tapped, from 1, or 0.
-static int draw_card_text(const BOItem *item, float cardX, float cardY, const BOAction *actions, int actionCount,
-                          int beside) {
-    BODescription d;
-    bo_describe_item(G.run, item, &d);
-    const BOCenterInfo *c = bo_item_center(item);
+// The box with the name, the badge, and the text of a thing on the screen
+// at (thingX, thingY) with the size thingW x thingH, under or over it, with
+// up to two buttons. badge can be NULL. Returns the number of the button
+// that is tapped, from 1, or 0.
+static int draw_text_box(const BODescription *d, const char *badge, unsigned int badgeColour, float thingX,
+                         float thingY, float thingW, float thingH, const BOAction *actions, int actionCount,
+                         int beside) {
     float line = G.height * 0.042f, pad = 10;
     float w = G.width * 0.3f;
-    for (int i = 0; i < d.line_count; i++) {
-        float lw = bo_rich_width(d.lines[i], line) + pad * 4;
+    for (int i = 0; i < d->line_count; i++) {
+        float lw = bo_rich_width(d->lines[i], line) + pad * 4;
         if (lw > w) w = lw;
     }
-    float nameH = G.height * 0.06f, badgeH = G.height * 0.045f;
-    float h = pad * 2 + nameH + d.line_count * line * 1.15f + badgeH + pad * 2;
+    float nameH = G.height * 0.06f, badgeH = badge ? G.height * 0.045f : 0;
+    float h = pad * 2 + nameH + d->line_count * line * 1.15f + badgeH + pad * 2;
     if (actionCount > 0) h += G.height * 0.08f;
-    float x = cardX + G.cardW / 2 - w / 2;
-    float y = cardY + G.cardH + 8;
-    if (y + h > G.height - 4) y = cardY - h - 8;
+    float x = thingX + thingW / 2 - w / 2;
+    float y = thingY + thingH + 8;
+    if (y + h > G.height - 4) y = thingY - h - 8;
     if (beside) {
-        // Beside the card, so that the hand under it stays in view.
-        x = cardX + G.cardW + 8;
-        if (x + w > G.width - 4) x = cardX - w - 8;
-        y = cardY - h * 0.25f;
+        // Beside the thing, so that the hand under it stays in view.
+        x = thingX + thingW + 8;
+        if (x + w > G.width - 4) x = thingX - w - 8;
+        y = thingY - h * 0.25f;
     }
     if (x < 4) x = 4;
     if (x + w > G.width - 4) x = G.width - 4 - w;
@@ -717,20 +716,19 @@ static int draw_card_text(const BOItem *item, float cardX, float cardY, const BO
     BORect box = bo_rect(x, y, w, h);
     bo_gfx_round_rect(box.x + 3, box.y + 4, box.w, box.h, 10, bo_rgba(0x000000, 0.35f));
     bo_ui_box(box, BO_C_L_BLACK);
-    bo_font_draw(d.name, x + w / 2, y + pad, nameH * 0.85f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
-    BORect body = bo_rect(x + pad, y + pad + nameH, w - pad * 2, d.line_count * line * 1.15f + pad);
+    bo_font_draw(d->name, x + w / 2, y + pad, nameH * 0.85f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    BORect body = bo_rect(x + pad, y + pad + nameH, w - pad * 2, d->line_count * line * 1.15f + pad);
     bo_ui_box(body, BO_C_WHITE);
-    for (int i = 0; i < d.line_count; i++) {
-        bo_rich_draw(d.lines[i], x + w / 2, body.y + pad * 0.5f + i * line * 1.15f, line, bo_rgb(BO_C_TEXT_DARK),
+    for (int i = 0; i < d->line_count; i++) {
+        bo_rich_draw(d->lines[i], x + w / 2, body.y + pad * 0.5f + i * line * 1.15f, line, bo_rgb(BO_C_TEXT_DARK),
                      BO_ALIGN_CENTER);
     }
-    // The badge: the rarity of a joker, or the set of another card.
-    const char *badge = c->set == BO_SET_JOKER ? rarity_name(c->rarity) : set_name(c->set);
-    unsigned int badgeColour = c->set == BO_SET_JOKER ? rarity_colour(c->rarity) : set_colour(c->set);
     float by = body.y + body.h + pad * 0.6f;
-    BORect badgeBox = bo_rect(x + w * 0.25f, by, w * 0.5f, badgeH);
-    bo_ui_box(badgeBox, badgeColour);
-    bo_font_draw(badge, x + w / 2, by + badgeH * 0.12f, badgeH * 0.8f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    if (badge) {
+        BORect badgeBox = bo_rect(x + w * 0.25f, by, w * 0.5f, badgeH);
+        bo_ui_box(badgeBox, badgeColour);
+        bo_font_draw(badge, x + w / 2, by + badgeH * 0.12f, badgeH * 0.8f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    }
     bo_ui_area(BO_ID_BACKGROUND + 1000, box);
     int tapped = 0;
     if (actionCount > 0) {
@@ -745,6 +743,18 @@ static int draw_card_text(const BOItem *item, float cardX, float cardY, const BO
         }
     }
     return tapped;
+}
+
+// The text box of a card.
+static int draw_card_text(const BOItem *item, float cardX, float cardY, const BOAction *actions, int actionCount,
+                          int beside) {
+    BODescription d;
+    bo_describe_item(G.run, item, &d);
+    const BOCenterInfo *c = bo_item_center(item);
+    // The badge: the rarity of a joker, or the set of another card.
+    const char *badge = c->set == BO_SET_JOKER ? rarity_name(c->rarity) : set_name(c->set);
+    unsigned int badgeColour = c->set == BO_SET_JOKER ? rarity_colour(c->rarity) : set_colour(c->set);
+    return draw_text_box(&d, badge, badgeColour, cardX, cardY, G.cardW, G.cardH, actions, actionCount, beside);
 }
 
 // --- The round -------------------------------------------------------------

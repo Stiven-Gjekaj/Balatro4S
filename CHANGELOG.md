@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.0 (2026-10-18)
+
+- Use the 22 Tarot cards, the 12 Planet cards, and the 18 Spectral cards.
+  Tap a card in the consumable slots, select the cards of the hand, and tap
+  Use. A test uses 2000 random cards in this code and in the code of
+  Balatro, and all of them agree.
+- Open the Arcana, Celestial, Spectral, Standard, and Buffoon packs in each
+  size from the shop. Choose the cards of the pack, or skip it. A test opens
+  2000 random packs, and all of them agree with Balatro.
+- The Planet cards level up the poker hands. Run Info shows the level, the
+  chips, the mult, and the plays of each hand.
+- The text of each Tarot, Planet, Spectral, pack, and voucher card.
+- A larger hand draws its new cards at once, as in Balatro.
+- Fix: a playing card in the shop takes one sort_id, as in Balatro.
+- The vouchers show in the shop, but you cannot buy them yet. They come in
+  0.5.
+
 ## 0.3.0 (2026-10-18)
 
 - The shop: two cards for sale, the voucher, two packs, the reroll, and

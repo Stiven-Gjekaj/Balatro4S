@@ -37,6 +37,9 @@ BO_TEST(test_blind_gives_the_chip_amount_of_each_ante) {
     // The endless antes, from get_blind_amount in LuaJIT.
     BO_EQUAL_INT(bo_blind_amount(9, 1), 110000);
     BO_EQUAL_INT(bo_blind_amount(12, 1), 300000000);
+    BO_EQUAL_INT(bo_blind_amount(9, 2), 230000);
+    BO_EQUAL_INT(bo_blind_amount(12, 3), 1200000000);
+    BO_EXPECT(bo_blind_amount(16, 1) == 8.6e20);
 }
 
 BO_TEST(test_blind_has_the_values_of_the_table) {

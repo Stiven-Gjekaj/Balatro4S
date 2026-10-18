@@ -29,10 +29,10 @@ _Native C and OpenGL ES 2.0, the rules of Balatro, your own copy of the game_
 ---
 
 > [!NOTE]
-> **Version 0.10.0 is out.** It plays full runs with all 150 jokers, all
+> **Version 1.0 is out.** It plays full runs with all 150 jokers, all
 > decks and stakes, the 20 challenges, Endless Mode, and the sounds and the
-> music of Balatro. Version 1.0 compares all the content with Balatro once
-> more. [CHANGELOG.md](CHANGELOG.md) lists the changes of each release.
+> music of Balatro. The rules and the text of each card agree with the code
+> of Balatro 1.0.1o. [CHANGELOG.md](CHANGELOG.md) lists the changes of each release.
 > [docs/decisions.md](docs/decisions.md) holds each decision and its reason.
 
 > [!IMPORTANT]
@@ -111,7 +111,7 @@ starts in about 1 second.
 - The collection, the statistics, and the settings: game speed, screen
   shake, volume, music, and sounds
 
-Version 0.10.0 was checked on an iPhone 4S with iOS 6.1.3.
+Version 1.0.0 was checked on an iPhone 4S with iOS 6.1.3.
 
 ## You need a copy of Balatro
 

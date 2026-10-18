@@ -10,8 +10,9 @@ SQUARE="$ROOT/build/icon-square.png"
 mkdir -p "$ROOT/build"
 
 # The source has a black margin around a rounded square.
-# Cut out the square. iOS 6 puts its own rounded mask on the icon, and its
-# corners are larger, so the black corners of the art do not show.
+# Cut out the square. The rounded corners of iOS 6 are larger than the
+# corners of the art, so the black corners of the art do not show.
 sips -c 1172 1172 --cropOffset 32 40 "$SOURCE" --out "$SQUARE" >/dev/null
-sips -z 57 57 "$SQUARE" --out "$ROOT/resources/Icon.png" >/dev/null
-sips -z 114 114 "$SQUARE" --out "$ROOT/resources/Icon@2x.png" >/dev/null
+# Round the corners and add the gloss of iOS 6 into the PNG files.
+swift "$ROOT/scripts/icon-gloss.swift" "$SQUARE" "$ROOT/resources/Icon.png" 57
+swift "$ROOT/scripts/icon-gloss.swift" "$SQUARE" "$ROOT/resources/Icon@2x.png" 114

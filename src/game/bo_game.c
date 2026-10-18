@@ -75,6 +75,12 @@ enum {
     BO_ID_COLLECTION,    // The run setup: open the collection.
     BO_ID_STATS,         // The run setup: open the stats of the profile.
     BO_ID_STATS_CLOSE,
+    BO_ID_SETTINGS,       // Open the settings.
+    BO_ID_SETTINGS_CLOSE,
+    BO_ID_SPEED_PREV,
+    BO_ID_SPEED_NEXT,
+    BO_ID_SHAKE,
+    BO_ID_INFO_SETTINGS,  // Run Info: open the settings.
     BO_ID_COL_CLOSE,
     BO_ID_COL_PREV,
     BO_ID_COL_NEXT,
@@ -198,6 +204,10 @@ static struct {
     float unlockConfirm;    // Unlock All waits for a second tap this long.
     int collection;         // The collection is open.
     int stats;              // The stats of the profile are open.
+    int settings;           // The settings are open.
+    int speedIndex;         // G.SETTINGS.GAMESPEED: 0.5, 1, 2, or 4.
+    int shake;              // The screen shakes.
+    char settingsPath[1024];
     int colTab, colPage, colFocus;  // The tab, the page, and the card that shows its text.
     float blindTagX[2], blindTagY[2];  // The tags of the blind select.
 
@@ -371,6 +381,39 @@ static void popup(const char *text, float x, float y, unsigned int color) {
     }
 }
 
+static const float kSpeeds[4] = {0.5f, 1, 2, 4};
+
+static float game_speed(void) {
+    return kSpeeds[G.speedIndex >= 0 && G.speedIndex < 4 ? G.speedIndex : 1];
+}
+
+// settings.b4t beside Balatro.love: one value on each line, as "speed 2".
+static void load_settings(void) {
+    G.speedIndex = 1;
+    G.shake = 1;
+    FILE *file = G.settingsPath[0] ? fopen(G.settingsPath, "r") : NULL;
+    if (!file) return;
+    char line[64];
+    while (fgets(line, sizeof(line), file)) {
+        float speed;
+        int shake;
+        if (sscanf(line, "speed %f", &speed) == 1) {
+            for (int i = 0; i < 4; i++) {
+                if (speed == kSpeeds[i]) G.speedIndex = i;
+            }
+        }
+        if (sscanf(line, "shake %d", &shake) == 1) G.shake = shake != 0;
+    }
+    fclose(file);
+}
+
+static void save_settings(void) {
+    FILE *file = G.settingsPath[0] ? fopen(G.settingsPath, "w") : NULL;
+    if (!file) return;
+    fprintf(file, "speed %g\nshake %d\n", game_speed(), G.shake);
+    fclose(file);
+}
+
 // The views of the screen for the run in G.run, after a new start or a
 // load.
 static void reset_views(void) {
@@ -509,6 +552,10 @@ int bo_game_start(const char *love_path, int width, int height) {
     if (slash) {
         snprintf(G.profilePath, sizeof(G.profilePath), "%.*s/profile.b4p", (int)(slash - love_path), love_path);
     }
+    if (slash) {
+        snprintf(G.settingsPath, sizeof(G.settingsPath), "%.*s/settings.b4t", (int)(slash - love_path), love_path);
+    }
+    load_settings();
     G.profile = malloc(sizeof(BOProfile));
     if (G.profile) {
         if (!G.profilePath[0] || !bo_profile_read(G.profile, G.profilePath)) bo_profile_init(G.profile);
@@ -1218,7 +1265,7 @@ static void show_event(const BOScoreEvent *event) {
 }
 
 static void update_flow(double dt) {
-    G.wait -= dt;
+    G.wait -= dt * game_speed();
     if (G.wait > 0) return;
     if (G.flow == BO_FLOW_SCORE) {
         if (G.nextEvent < G.score.event_count) {
@@ -1544,6 +1591,10 @@ static void draw_setup(void) {
     if (bo_ui_button(BO_ID_STATS, bo_rect(inner.x + 14, inner.y + 14, colW * 0.6f, G.height * 0.075f), BO_C_ORANGE,
                      "Stats", 1)) {
         G.stats = 1;
+    }
+    if (bo_ui_button(BO_ID_SETTINGS, bo_rect(inner.x + 24 + colW * 0.6f, inner.y + 14, colW * 0.75f, G.height * 0.075f),
+                     BO_C_ORANGE, "Settings", 1)) {
+        G.settings = 1;
     }
     // The deck, between the two arrows.
     float cw = G.cardW * 1.3f, ch = G.cardH * 1.3f;
@@ -1884,6 +1935,50 @@ static void draw_collection(void) {
         bo_profile_discover_tallies(G.profile, &total, &of, NULL, NULL);
         snprintf(text, sizeof(text), "%d/%d", total, of);
         bo_font_draw(text, inner.x + 14, ay + ah * 0.2f, ah * 0.55f, bo_rgb(BO_C_GREY), BO_ALIGN_LEFT);
+    }
+}
+
+// --- The settings ----------------------------------------------------------
+
+// The settings of the game tab of Balatro: the game speed and the screen
+// shake.
+static void draw_settings(void) {
+    bo_gfx_rect(0, 0, G.width, G.height, bo_rgba(0x000000, 0.55f));
+    BORect box = bo_rect(G.width * 0.2f, G.height * 0.18f, G.width * 0.6f, G.height * 0.64f);
+    bo_ui_box(box, BO_C_BLACK);
+    BORect inner = bo_rect(box.x + 6, box.y + 6, box.w - 12, box.h - 12);
+    bo_ui_box(inner, BO_C_DARK);
+    // The area under the box takes the taps, so that they do not reach the
+    // screen under it.
+    bo_ui_area(BO_ID_SETTINGS + 1000, bo_rect(0, 0, G.width, G.height));
+    bo_font_draw("Settings", inner.x + inner.w / 2, inner.y + 10, G.height * 0.07f, bo_rgb(BO_C_WHITE),
+                 BO_ALIGN_CENTER);
+    float rowH = G.height * 0.1f, y = inner.y + G.height * 0.13f;
+    float aw = inner.w * 0.12f;
+    char text[32];
+    bo_font_draw("Game Speed", inner.x + 20, y + rowH * 0.2f, rowH * 0.5f, bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
+    float vx = inner.x + inner.w * 0.55f, vw = inner.w * 0.4f;
+    if (bo_ui_button(BO_ID_SPEED_PREV, bo_rect(vx, y, aw, rowH * 0.8f), BO_C_RED, "<", G.speedIndex > 0)) {
+        G.speedIndex--;
+        save_settings();
+    }
+    if (bo_ui_button(BO_ID_SPEED_NEXT, bo_rect(vx + vw - aw, y, aw, rowH * 0.8f), BO_C_RED, ">", G.speedIndex < 3)) {
+        G.speedIndex++;
+        save_settings();
+    }
+    snprintf(text, sizeof(text), "%gX", game_speed());
+    bo_font_draw(text, vx + vw / 2, y + rowH * 0.15f, rowH * 0.55f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    y += rowH * 1.3f;
+    bo_font_draw("Screen Shake", inner.x + 20, y + rowH * 0.2f, rowH * 0.5f, bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
+    if (bo_ui_button(BO_ID_SHAKE, bo_rect(vx, y, vw, rowH * 0.8f), G.shake ? BO_C_BLUE : BO_C_GREY,
+                     G.shake ? "On" : "Off", 1)) {
+        G.shake = !G.shake;
+        save_settings();
+    }
+    float bw = inner.w * 0.34f, bh = G.height * 0.09f;
+    if (bo_ui_button(BO_ID_SETTINGS_CLOSE, bo_rect(inner.x + (inner.w - bw) / 2, inner.y + inner.h - bh - 10, bw, bh),
+                     BO_C_ORANGE, "Back", 1)) {
+        G.settings = 0;
     }
 }
 
@@ -2352,6 +2447,10 @@ static void draw_run_info(void) {
         G.showInfo = 0;
         G.setup = 1;
     }
+    if (bo_ui_button(BO_ID_INFO_SETTINGS, bo_rect(box.x + 12, box.y + 8, bw, bh), BO_C_ORANGE, "Settings", 1)) {
+        G.showInfo = 0;
+        G.settings = 1;
+    }
 }
 
 // --- The frame -------------------------------------------------------------
@@ -2388,7 +2487,7 @@ static void draw_popups(double dt) {
     for (int i = 0; i < 24; i++) {
         BOPopup *p = &G.popups[i];
         if (p->age <= 0 || p->age > 1.2f) continue;
-        p->age += (float)dt;
+        p->age += (float)dt * game_speed();
         float alpha = p->age < 0.9f ? 1 : (1.2f - p->age) / 0.3f;
         float size = G.height * 0.06f;
         bo_font_draw(p->text, p->x + 2, p->y - p->age * 20 + 2, size, bo_rgba(0x000000, alpha * 0.4f),
@@ -2511,7 +2610,7 @@ static void move_items(double dt) {
 // update_canvas_juice with the screen shake at 50, as it starts. The
 // background does not move.
 static void shake_room(void) {
-    const float amount = 1.5f;
+    const float amount = G.shake ? 1.5f : 0;
     float t = (float)G.time, u = unit();
     float r = (0.001f * sinf(0.3f * t) + 0.002f * G.jiggle * sinf(39.913f * t)) * amount;
     float dx = amount * (0.015f * sinf(0.913f * t) + 0.01f * G.jiggle * amount * sinf(19.913f * t));
@@ -2568,6 +2667,7 @@ void bo_game_frame(double dt) {
     }
     if (G.setup) {
         draw_setup();
+        if (G.settings) draw_settings();
         draw_notice(dt);
         bo_gfx_flush();
         bo_ui_end();
@@ -2602,6 +2702,7 @@ void bo_game_frame(double dt) {
     draw_popups(dt);
     draw_notice(dt);
     if (G.showInfo) draw_run_info();
+    if (G.settings) draw_settings();
     bo_gfx_flush();
     bo_ui_end();
 }

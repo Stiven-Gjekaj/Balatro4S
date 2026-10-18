@@ -16,6 +16,7 @@
 #include "bo_image.h"
 #include "bo_joker.h"
 #include "bo_luatab.h"
+#include "bo_pack.h"
 #include "bo_rich.h"
 #include "bo_rules.h"
 #include "bo_run.h"
@@ -51,7 +52,9 @@ enum {
     BO_ID_ENDLESS,
     BO_ID_NEXT_ROUND,
     BO_ID_REROLL,
-    BO_ID_ACTION,      // The button of the focused card: Buy or Sell.
+    BO_ID_ACTION,      // The first button of the focused card: Buy, Use, or Sell.
+    BO_ID_ACTION_2,    // The second button: Sell.
+    BO_ID_SKIP,
     BO_ID_BACKGROUND,  // A tap on nothing: the focus goes away.
     BO_ID_HAND_CARD = 100,
     BO_ID_JOKER = 200,
@@ -59,6 +62,7 @@ enum {
     BO_ID_SHOP = 400,
     BO_ID_VOUCHER = 450,
     BO_ID_PACK = 460,
+    BO_ID_PACK_CARD = 470,
 };
 
 // The areas that a card can be in, for the focus.
@@ -68,7 +72,8 @@ typedef enum {
     BO_FOCUS_CONSUMABLE,
     BO_FOCUS_SHOP,
     BO_FOCUS_VOUCHER,
-    BO_FOCUS_PACK,
+    BO_FOCUS_PACK,       // A pack for sale in the shop.
+    BO_FOCUS_PACK_CARD,  // A card of the open pack.
 } BOFocusArea;
 
 typedef struct {
@@ -510,7 +515,7 @@ static void draw_panel(void) {
         bo_font_draw(text, tx, head.y + head.h + blindBox.h * 0.46f, blindBox.h * 0.12f, bo_rgb(BO_C_MONEY),
                      BO_ALIGN_LEFT);
     } else {
-        int shop = run->state == BO_STATE_SHOP;
+        int shop = run->state == BO_STATE_SHOP || run->state == BO_STATE_PACK;
         bo_font_draw(shop ? "Improve" : "Choose your", panelW / 2, blindBox.y + blindBox.h * 0.22f,
                      blindBox.h * 0.22f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
         bo_font_draw(shop ? "your run!" : "next Blind", panelW / 2, blindBox.y + blindBox.h * 0.5f, blindBox.h * 0.22f,
@@ -651,11 +656,18 @@ static unsigned int set_colour(int set) {
     }
 }
 
+// A button of the text box of a card.
+typedef struct {
+    const char *label;
+    unsigned int colour;
+    int enabled;
+} BOAction;
+
 // The box with the name, the badge, and the text of a card, under or over
-// the card. action is the label of the button, or NULL. Returns 1 when the
-// button is tapped.
-static int draw_card_text(const BOItem *item, float cardX, float cardY, const char *action, unsigned int actionColour,
-                           int actionEnabled) {
+// the card, with up to two buttons. Returns the number of the button that
+// is tapped, from 1, or 0.
+static int draw_card_text(const BOItem *item, float cardX, float cardY, const BOAction *actions, int actionCount,
+                          int beside) {
     BODescription d;
     bo_describe_item(G.run, item, &d);
     const BOCenterInfo *c = bo_item_center(item);
@@ -667,12 +679,19 @@ static int draw_card_text(const BOItem *item, float cardX, float cardY, const ch
     }
     float nameH = G.height * 0.06f, badgeH = G.height * 0.045f;
     float h = pad * 2 + nameH + d.line_count * line * 1.15f + badgeH + pad * 2;
-    if (action) h += G.height * 0.08f;
+    if (actionCount > 0) h += G.height * 0.08f;
     float x = cardX + G.cardW / 2 - w / 2;
-    if (x < 4) x = 4;
-    if (x + w > G.width - 4) x = G.width - 4 - w;
     float y = cardY + G.cardH + 8;
     if (y + h > G.height - 4) y = cardY - h - 8;
+    if (beside) {
+        // Beside the card, so that the hand under it stays in view.
+        x = cardX + G.cardW + 8;
+        if (x + w > G.width - 4) x = cardX - w - 8;
+        y = cardY - h * 0.25f;
+    }
+    if (x < 4) x = 4;
+    if (x + w > G.width - 4) x = G.width - 4 - w;
+    if (y + h > G.height - 4) y = G.height - 4 - h;
     if (y < 4) y = 4;
     BORect box = bo_rect(x, y, w, h);
     bo_gfx_round_rect(box.x + 3, box.y + 4, box.w, box.h, 10, bo_rgba(0x000000, 0.35f));
@@ -691,14 +710,20 @@ static int draw_card_text(const BOItem *item, float cardX, float cardY, const ch
     BORect badgeBox = bo_rect(x + w * 0.25f, by, w * 0.5f, badgeH);
     bo_ui_box(badgeBox, badgeColour);
     bo_font_draw(badge, x + w / 2, by + badgeH * 0.12f, badgeH * 0.8f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
-    if (action) {
-        float bh = G.height * 0.07f;
-        BORect button = bo_rect(x + w * 0.2f, by + badgeH + pad * 0.6f, w * 0.6f, bh);
-        bo_ui_area(BO_ID_BACKGROUND + 1000, box);
-        return bo_ui_button(BO_ID_ACTION, button, actionColour, action, actionEnabled);
-    }
     bo_ui_area(BO_ID_BACKGROUND + 1000, box);
-    return 0;
+    int tapped = 0;
+    if (actionCount > 0) {
+        float bh = G.height * 0.07f, gap = pad;
+        float bw = actionCount == 1 ? w * 0.6f : (w - pad * 2 - gap) / 2;
+        float bx = actionCount == 1 ? x + w * 0.2f : x + pad;
+        for (int i = 0; i < actionCount; i++) {
+            BORect button = bo_rect(bx + i * (bw + gap), by + badgeH + pad * 0.6f, bw, bh);
+            if (bo_ui_button(BO_ID_ACTION + i, button, actions[i].colour, actions[i].label, actions[i].enabled)) {
+                tapped = i + 1;
+            }
+        }
+    }
+    return tapped;
 }
 
 // --- The round -------------------------------------------------------------
@@ -935,27 +960,43 @@ static void draw_hand_controls(void) {
     }
 }
 
-static void draw_round(void) {
+// The cards of the hand. With interactive, a tap selects a card, as for a
+// play or for a Tarot card.
+static void draw_hand_cards(int interactive) {
     for (int i = 0; i < G.handCount; i++) {
         BOCardView *c = &G.hand[i];
         draw_view(c);
-        if (G.flow == BO_FLOW_IDLE && G.run->state == BO_STATE_SELECTING) {
-            bo_ui_area(BO_ID_HAND_CARD + i, bo_rect(c->tx, c->ty, G.cardW, G.cardH));
-        }
+        if (interactive) bo_ui_area(BO_ID_HAND_CARD + i, bo_rect(c->tx, c->ty, G.cardW, G.cardH));
     }
-    for (int i = 0; i < G.playCount; i++) draw_view(&G.play[i]);
-    draw_hand_controls();
+}
+
+static void handle_hand_taps(void) {
     for (int i = 0; i < G.handCount; i++) {
         if (!bo_ui_clicked(BO_ID_HAND_CARD + i)) continue;
         int count = 0;
         selected_mask(&count);
-        G.focus = BO_FOCUS_NONE;
+        // A Tarot card keeps its focus, so that the cards for it can be
+        // selected.
+        if (G.focus != BO_FOCUS_CONSUMABLE && G.focus != BO_FOCUS_PACK_CARD) G.focus = BO_FOCUS_NONE;
         if (!G.hand[i].selected && count >= BO_MAX_PLAY) break;
         G.hand[i].selected = !G.hand[i].selected;
         update_preview();
         layout();
         break;
     }
+}
+
+static void clear_selection(void) {
+    for (int i = 0; i < G.handCount; i++) G.hand[i].selected = 0;
+    update_preview();
+    layout();
+}
+
+static void draw_round(void) {
+    draw_hand_cards(G.flow == BO_FLOW_IDLE && G.run->state == BO_STATE_SELECTING);
+    for (int i = 0; i < G.playCount; i++) draw_view(&G.play[i]);
+    draw_hand_controls();
+    handle_hand_taps();
 }
 
 // --- The blind select, the cash out, and the end ----------------------------
@@ -1109,6 +1150,9 @@ static void draw_end(int won) {
 
 // --- The shop --------------------------------------------------------------
 
+static void voucher_place(float *x, float *y);
+static void pack_place(int index, float *x, float *y);
+
 static BORect shop_box(void) {
     BORect area = main_area();
     return bo_rect(area.x, G.height * 0.255f, area.w + G.width * 0.02f, G.height * 0.73f);
@@ -1168,15 +1212,16 @@ static void draw_shop(void) {
     }
 
     // The voucher and the packs. They open in 0.4 and 0.5.
-    float y2 = inner.y + inner.h - G.cardH * 1.1f - 8;
     if (run->has_shop_voucher) {
-        float x = inner.x + inner.w * 0.08f;
+        float x, y2;
+        voucher_place(&x, &y2);
         draw_item(&run->shop_voucher, x, y2, G.cardW, G.cardH);
         draw_price(run->shop_voucher.cost, x, y2);
         bo_ui_area(BO_ID_VOUCHER, bo_rect(x, y2, G.cardW, G.cardH));
     }
     for (int i = 0; i < run->shop_pack_count; i++) {
-        float x = inner.x + inner.w * 0.42f + i * (G.cardW * 1.25f);
+        float x, y2;
+        pack_place(i, &x, &y2);
         draw_item(&run->shop_packs[i], x, y2, G.cardW * 1.1f, G.cardH * 1.1f);
         draw_price(run->shop_packs[i].cost, x + G.cardW * 0.05f, y2);
         bo_ui_area(BO_ID_PACK + i, bo_rect(x, y2, G.cardW * 1.1f, G.cardH * 1.1f));
@@ -1185,53 +1230,105 @@ static void draw_shop(void) {
 
 // --- The focus of a card ---------------------------------------------------
 
+// The place of the voucher and of the packs in the shop.
+static void voucher_place(float *x, float *y) {
+    BORect box = shop_box();
+    *x = box.x + 8 + (box.w - 16) * 0.08f;
+    *y = box.y + box.h - 16 - G.cardH * 1.1f;
+}
+
+static void pack_place(int index, float *x, float *y) {
+    BORect box = shop_box();
+    *x = box.x + 8 + (box.w - 16) * 0.42f + index * (G.cardW * 1.25f);
+    *y = box.y + box.h - 16 - G.cardH * 1.1f;
+}
+
+// The place of a card of the open pack.
+static void pack_card_place(int index, int count, float *x, float *y) {
+    BORect area = main_area();
+    BORect row = bo_rect(area.x + area.w * 0.05f, 0, area.w * 0.9f, G.cardH);
+    *x = slot_x(row, index, count);
+    *y = G.height * 0.295f;
+}
+
+// A popup over the side panel after a card was used: the new level of a
+// hand, or the money.
+static void after_use(const BOItem *used, int dollarsBefore) {
+    const BOCenterInfo *c = bo_item_center(used);
+    char text[48];
+    float x = panel_width() / 2, y = G.height * 0.36f;
+    const char *hand = bo_center_text(c, BO_F_HAND_TYPE);
+    if (hand) {
+        int type = bo_rules_hand_by_name(hand);
+        if (type >= 0) {
+            snprintf(text, sizeof(text), "%s lvl.%d", hand, G.run->hands[type].level);
+            popup(text, x, y, BO_C_ORANGE);
+        }
+    } else if (used->center == BO_C_BLACK_HOLE) {
+        popup("All hands +1", x, y, BO_C_ORANGE);
+    }
+    int gained = G.run->dollars - dollarsBefore;
+    if (gained != 0) {
+        snprintf(text, sizeof(text), gained > 0 ? "+$%d" : "-$%d", gained > 0 ? gained : -gained);
+        popup(text, x, G.height * 0.66f, BO_C_MONEY);
+    }
+    sync_hand();
+    clear_selection();
+    G.focus = BO_FOCUS_NONE;
+}
+
 static void draw_focus(void) {
     BORun *run = G.run;
     float x = 0, y = 0;
     const BOItem *item = NULL;
-    const char *action = NULL;
-    unsigned int colour = BO_C_ORANGE;
-    int enabled = 1;
-    char label[24];
+    BOAction actions[2];
+    int actionCount = 0;
+    char sell[24];
+    int idle = G.flow == BO_FLOW_IDLE;
+    int count = 0;
+    uint64_t mask = selected_mask(&count);
     switch (G.focus) {
     case BO_FOCUS_JOKER:
         if (G.focusIndex >= run->joker_count) break;
         item = &run->jokers[G.focusIndex];
         x = G.jokerViews[G.focusIndex].x;
         y = G.jokerViews[G.focusIndex].y;
-        snprintf(label, sizeof(label), "Sell $%d", item->sell_cost);
-        action = label;
-        colour = BO_C_GREEN;
-        enabled = !item->eternal && G.flow == BO_FLOW_IDLE;
+        snprintf(sell, sizeof(sell), "Sell $%d", item->sell_cost);
+        actions[actionCount++] = (BOAction){sell, BO_C_GREEN, !item->eternal && idle};
         break;
     case BO_FOCUS_CONSUMABLE:
         if (G.focusIndex >= run->consumable_count) break;
         item = &run->consumables[G.focusIndex];
         x = G.consumableViews[G.focusIndex].x;
         y = G.consumableViews[G.focusIndex].y;
-        snprintf(label, sizeof(label), "Sell $%d", item->sell_cost);
-        action = label;
-        colour = BO_C_GREEN;
-        enabled = G.flow == BO_FLOW_IDLE;
+        actions[actionCount++] =
+            (BOAction){"Use", BO_C_RED, idle && bo_run_can_use_consumable(run, G.focusIndex, mask)};
+        snprintf(sell, sizeof(sell), "Sell $%d", item->sell_cost);
+        actions[actionCount++] = (BOAction){sell, BO_C_GREEN, idle};
         break;
     case BO_FOCUS_SHOP:
         if (G.focusIndex >= run->shop_count) break;
         item = &run->shop[G.focusIndex].item;
         shop_card_place(G.focusIndex, run->shop_count, &x, &y);
-        action = "Buy";
-        enabled = item->cost <= bo_run_spendable(run) || item->cost <= 0;
+        actions[actionCount++] = (BOAction){"Buy", BO_C_ORANGE, item->cost <= bo_run_spendable(run) || item->cost <= 0};
         break;
     case BO_FOCUS_VOUCHER:
         if (!run->has_shop_voucher) break;
         item = &run->shop_voucher;
-        x = shop_box().x + 16;
-        y = shop_box().y + shop_box().h - G.cardH * 1.2f;
+        voucher_place(&x, &y);
         break;
     case BO_FOCUS_PACK:
         if (G.focusIndex >= run->shop_pack_count) break;
         item = &run->shop_packs[G.focusIndex];
-        x = shop_box().x + shop_box().w * 0.42f;
-        y = shop_box().y + shop_box().h - G.cardH * 1.2f;
+        pack_place(G.focusIndex, &x, &y);
+        actions[actionCount++] = (BOAction){"Open", BO_C_GREEN, item->cost <= bo_run_spendable(run) || item->cost <= 0};
+        break;
+    case BO_FOCUS_PACK_CARD:
+        if (run->state != BO_STATE_PACK || G.focusIndex >= run->pack_count) break;
+        item = &run->pack_cards[G.focusIndex].item;
+        pack_card_place(G.focusIndex, run->pack_count, &x, &y);
+        actions[actionCount++] = (BOAction){bo_item_center(item)->consumeable ? "Use" : "Select",
+                                            BO_C_GREEN, idle && bo_pack_can_choose(run, G.focusIndex, mask)};
         break;
     default: break;
     }
@@ -1239,57 +1336,115 @@ static void draw_focus(void) {
         G.focus = BO_FOCUS_NONE;
         return;
     }
-    // A playing card in the shop has no text yet; only its price shows.
-    if (G.focus == BO_FOCUS_SHOP && run->shop[G.focusIndex].is_playing_card) {
-        if (bo_ui_button(BO_ID_ACTION, bo_rect(x, y + G.cardH + 8, G.cardW, G.height * 0.07f), BO_C_ORANGE, "Buy",
-                         enabled)) {
-            bo_run_buy(run, G.focusIndex);
-            G.focus = BO_FOCUS_NONE;
+    // A playing card has no text box; only its button shows.
+    int playing = (G.focus == BO_FOCUS_SHOP && run->shop[G.focusIndex].is_playing_card) ||
+                  (G.focus == BO_FOCUS_PACK_CARD && run->pack_cards[G.focusIndex].is_playing_card);
+    int tapped = 0;
+    if (playing) {
+        BORect button = bo_rect(x - G.cardW * 0.1f, y + G.cardH + 8, G.cardW * 1.2f, G.height * 0.07f);
+        tapped = bo_ui_button(BO_ID_ACTION, button, actions[0].colour, actions[0].label, actions[0].enabled);
+    } else {
+        tapped = draw_card_text(item, x, y, actions, actionCount, G.focus == BO_FOCUS_PACK_CARD && G.handCount > 0);
+    }
+    if (!tapped) return;
+    int done = 0;
+    int dollars = run->dollars;
+    BOItem used = *item;
+    switch (G.focus) {
+    case BO_FOCUS_JOKER: done = bo_run_sell_joker(run, G.focusIndex); break;
+    case BO_FOCUS_CONSUMABLE:
+        if (tapped == 1) {
+            done = bo_run_use_consumable(run, G.focusIndex, mask);
+            if (done) after_use(&used, dollars);
+        } else {
+            done = bo_run_sell_consumable(run, G.focusIndex);
         }
-        return;
+        break;
+    case BO_FOCUS_SHOP: done = bo_run_buy(run, G.focusIndex); break;
+    case BO_FOCUS_PACK:
+        done = bo_run_open_pack(run, G.focusIndex);
+        if (done) sync_hand();
+        break;
+    case BO_FOCUS_PACK_CARD:
+        done = bo_pack_choose(run, G.focusIndex, mask);
+        if (done) after_use(&used, dollars);
+        break;
+    default: break;
     }
-    if (draw_card_text(item, x, y, action, colour, enabled)) {
-        int done = 0;
-        if (G.focus == BO_FOCUS_JOKER) done = bo_run_sell_joker(run, G.focusIndex);
-        if (G.focus == BO_FOCUS_CONSUMABLE) done = bo_run_sell_consumable(run, G.focusIndex);
-        if (G.focus == BO_FOCUS_SHOP) done = bo_run_buy(run, G.focusIndex);
-        if (done) G.focus = BO_FOCUS_NONE;
-        fprintf(stderr, "action: %s\n", done ? "done" : "refused");
-    }
+    if (done) G.focus = BO_FOCUS_NONE;
+    fprintf(stderr, "action %d: %s\n", tapped, done ? "done" : "refused");
+}
+
+static void toggle_focus(BOFocusArea area, int index) {
+    int same = G.focus == area && G.focusIndex == index;
+    G.focus = same ? BO_FOCUS_NONE : area;
+    G.focusIndex = index;
 }
 
 static void handle_focus_taps(void) {
     BORun *run = G.run;
     for (int i = 0; i < run->joker_count; i++) {
-        if (bo_ui_clicked(BO_ID_JOKER + i)) {
-            int same = G.focus == BO_FOCUS_JOKER && G.focusIndex == i;
-            G.focus = same ? BO_FOCUS_NONE : BO_FOCUS_JOKER;
-            G.focusIndex = i;
-        }
+        if (bo_ui_clicked(BO_ID_JOKER + i)) toggle_focus(BO_FOCUS_JOKER, i);
     }
     for (int i = 0; i < run->consumable_count; i++) {
-        if (bo_ui_clicked(BO_ID_CONSUMABLE + i)) {
-            int same = G.focus == BO_FOCUS_CONSUMABLE && G.focusIndex == i;
-            G.focus = same ? BO_FOCUS_NONE : BO_FOCUS_CONSUMABLE;
-            G.focusIndex = i;
-        }
+        if (bo_ui_clicked(BO_ID_CONSUMABLE + i)) toggle_focus(BO_FOCUS_CONSUMABLE, i);
     }
     for (int i = 0; i < run->shop_count; i++) {
-        if (bo_ui_clicked(BO_ID_SHOP + i)) {
-            int same = G.focus == BO_FOCUS_SHOP && G.focusIndex == i;
-            G.focus = same ? BO_FOCUS_NONE : BO_FOCUS_SHOP;
-            G.focusIndex = i;
-        }
+        if (bo_ui_clicked(BO_ID_SHOP + i)) toggle_focus(BO_FOCUS_SHOP, i);
     }
-    if (bo_ui_clicked(BO_ID_VOUCHER)) G.focus = G.focus == BO_FOCUS_VOUCHER ? BO_FOCUS_NONE : BO_FOCUS_VOUCHER;
+    if (bo_ui_clicked(BO_ID_VOUCHER)) toggle_focus(BO_FOCUS_VOUCHER, 0);
     for (int i = 0; i < run->shop_pack_count; i++) {
-        if (bo_ui_clicked(BO_ID_PACK + i)) {
-            int same = G.focus == BO_FOCUS_PACK && G.focusIndex == i;
-            G.focus = same ? BO_FOCUS_NONE : BO_FOCUS_PACK;
-            G.focusIndex = i;
-        }
+        if (bo_ui_clicked(BO_ID_PACK + i)) toggle_focus(BO_FOCUS_PACK, i);
+    }
+    for (int i = 0; i < run->pack_count; i++) {
+        if (bo_ui_clicked(BO_ID_PACK_CARD + i)) toggle_focus(BO_FOCUS_PACK_CARD, i);
     }
     if (bo_ui_clicked(BO_ID_BACKGROUND)) G.focus = BO_FOCUS_NONE;
+}
+
+// --- The open pack ---------------------------------------------------------
+
+static void draw_pack(void) {
+    BORun *run = G.run;
+    const BOCenterInfo *pack = bo_center(run->pack);
+    BORect area = main_area();
+    BODescription d;
+    BOItem shown;
+    memset(&shown, 0, sizeof(shown));
+    shown.center = run->pack;
+    bo_describe_item(run, &shown, &d);
+    BORect box = bo_rect(area.x, G.height * 0.23f, area.w, G.cardH + G.height * 0.15f);
+    bo_ui_box(box, BO_C_BLACK);
+    float titleH = G.height * 0.05f;
+    bo_font_draw(d.name, box.x + box.w / 2, box.y + 6, titleH, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    for (int i = 0; i < run->pack_count; i++) {
+        float x, y;
+        pack_card_place(i, run->pack_count, &x, &y);
+        if (G.focus == BO_FOCUS_PACK_CARD && G.focusIndex == i) y -= G.cardH * 0.08f;
+        const BOShopCard *card = &run->pack_cards[i];
+        if (card->is_playing_card) {
+            draw_playing_card(&card->card, x, y, G.cardW, G.cardH);
+        } else {
+            draw_item(&card->item, x, y, G.cardW, G.cardH);
+        }
+        if (G.flow == BO_FLOW_IDLE) bo_ui_area(BO_ID_PACK_CARD + i, bo_rect(x, y, G.cardW, G.cardH));
+    }
+    char text[32];
+    snprintf(text, sizeof(text), "Choose %d", run->pack_choices);
+    bo_font_draw(text, box.x + 16, box.y + box.h - titleH - 6, titleH * 0.8f, bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
+    float bw = area.w * 0.2f, bh = G.height * 0.07f;
+    if (bo_ui_button(BO_ID_SKIP, bo_rect(box.x + box.w - bw - 12, box.y + box.h - bh - 8, bw, bh), BO_C_GREY, "Skip",
+                     bo_pack_can_skip(run) && G.flow == BO_FLOW_IDLE)) {
+        bo_pack_skip(run);
+        G.focus = BO_FOCUS_NONE;
+        sync_hand();
+        return;
+    }
+    if (G.handCount > 0) {
+        draw_hand_cards(G.flow == BO_FLOW_IDLE);
+        handle_hand_taps();
+    }
+    (void)pack;
 }
 
 // --- The frame -------------------------------------------------------------
@@ -1356,6 +1511,10 @@ void bo_game_frame(double dt) {
     if (G.flow != BO_FLOW_SCORE) count_to(&G.shownRound, G.run->chips, dt);
     count_to(&G.shownDollars, G.run->dollars, dt);
 
+    // The hand shows only while a blind is on or a pack shows it.
+    if (G.flow == BO_FLOW_IDLE && G.run->state != BO_STATE_SELECTING && G.run->state != BO_STATE_PACK) {
+        G.handCount = 0;
+    }
     bo_ui_begin();
     bo_gfx_begin(G.width, G.height, bo_rgb(0x3a5c4f));
     // A tap on the table takes the focus away.
@@ -1377,6 +1536,8 @@ void bo_game_frame(double dt) {
         draw_shop();
     } else if (state == BO_STATE_GAME_OVER) {
         draw_end(0);
+    } else if (state == BO_STATE_PACK) {
+        draw_pack();
     }
     draw_items();
     handle_focus_taps();

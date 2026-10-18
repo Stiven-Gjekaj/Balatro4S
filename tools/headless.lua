@@ -35,7 +35,7 @@ return function(dir)
         if G then G.ID = self.ID end
     end
     local noop_methods = {'juice_up', 'set_role', 'hard_set_T', 'align_to_major', 'remove', 'draw',
-                          'set_alignment', 'move', 'calculate_parrallax'}
+                          'set_alignment', 'move', 'calculate_parrallax', 'define_draw_steps', 'hard_set_VT'}
     for _, m in ipairs(noop_methods) do Moveable[m] = function() end end
     Sprite = Moveable:extend()
     AnimatedSprite = Sprite:extend()

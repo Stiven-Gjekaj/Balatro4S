@@ -37,6 +37,9 @@
 --   target 100            (the chips of the blind)
 --   tag tag_key           (skip a Small Blind for this tag; more lines skip
 --                          more blinds, then a shop opens, in place of a play)
+--   back b_key, stake N, start
+--                         (start a run with Game:start_run, and print the
+--                          state of the start, with tools/start.lua)
 -- A card is a key of P_CARDS, then an enhancement, an edition, and a seal.
 
 local dir, file = arg[1], arg[3]
@@ -51,6 +54,14 @@ for line in io.lines(file) do
     local words = {}
     for w in line:gmatch('%S+') do words[#words + 1] = w end
     if words[1] then lines[#lines + 1] = words end
+end
+
+-- A "start" line: the state of start_run with a deck and a stake.
+for _, w in ipairs(lines) do
+    if w[1] == 'start' then
+        dofile((arg[0]:gsub('oracle%.lua$', 'start.lua')))(B, lines)
+        return
+    end
 end
 
 local seed = 'ABCDEFGH'

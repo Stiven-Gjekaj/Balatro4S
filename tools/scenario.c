@@ -334,6 +334,64 @@ static void skip_for_tags(BORun *run, const BOCenterId *tags, int count) {
     print_levels(run);
 }
 
+static const char *suit_name(int suit) {
+    static const char *names[] = {"Spades", "Hearts", "Clubs", "Diamonds"};
+    return names[suit];
+}
+
+static char rank_char(int rank) {
+    return rank >= 2 && rank <= 14 ? "23456789TJQKA"[rank - 2] : '-';
+}
+
+// A "start" line: the state of bo_run_start_deck, as tools/start.lua prints
+// the state of start_run.
+static int print_start(FILE *file, const char *seed) {
+    char line[256], key[64];
+    BOCenterId back = BO_B_RED;
+    int stake = 1;
+    rewind(file);
+    while (fgets(line, sizeof(line), file)) {
+        if (sscanf(line, "back %63s", key) == 1) back = bo_center_by_key(key);
+        sscanf(line, "stake %d", &stake);
+    }
+    static BORun runStorage;
+    BORun *run = &runStorage;
+    bo_run_start_deck(run, seed, back, stake);
+    printf("start hands %d discards %d dollars %d hand_size %d joker_slots %d consumable_slots %d\n",
+           run->hands_per_round, run->discards_per_round, run->dollars, run->hand_size, run->joker_slots,
+           run->consumable_slots);
+    printf("boss %s voucher %s tags %s %s\n", bo_blind_info(run->boss)->key, bo_center(run->voucher)->key,
+           bo_center(run->blind_tags[0])->key, bo_center(run->blind_tags[1])->key);
+    // The used vouchers, in the order of their keys.
+    const char *vouchers[64];
+    int voucherCount = 0;
+    for (int c = 0; c < BO_CENTER_COUNT && voucherCount < 64; c++) {
+        if (run->used_vouchers[c]) vouchers[voucherCount++] = bo_center((BOCenterId)c)->key;
+    }
+    for (int i = 1; i < voucherCount; i++) {
+        for (int j = i; j > 0 && strcmp(vouchers[j - 1], vouchers[j]) > 0; j--) {
+            const char *t = vouchers[j];
+            vouchers[j] = vouchers[j - 1];
+            vouchers[j - 1] = t;
+        }
+    }
+    printf("vouchers");
+    for (int i = 0; i < voucherCount; i++) printf(" %s", vouchers[i]);
+    printf("\nconsumables");
+    for (int i = 0; i < run->consumable_count; i++) printf(" %s", bo_center(run->consumables[i].center)->key);
+    printf("\nrates tarot %g planet %g spectral %g shop_slots %d\n", run->tarot_rate, run->planet_rate,
+           run->spectral_rate, run->shop_joker_max);
+    printf("blind_scaling %g interest %s per_hand %d per_discard %d\n", run->ante_scaling,
+           run->no_interest ? "no" : "yes", run->money_per_hand, run->money_per_discard);
+    // The top of the deck is the end of the list.
+    printf("deck %d", run->deck_count);
+    for (int i = run->deck_count - 1; i >= 0; i--) print_card(&run->deck[i]);
+    printf("\nround idol %c %s mail %c ancient %s castle %s\n", rank_char(run->idol_rank),
+           run->idol_rank > 0 ? suit_name(run->idol_suit) : "-", rank_char(run->mail_rank),
+           suit_name(run->ancient_suit), suit_name(run->castle_suit));
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: scenario FILE\n");
@@ -345,9 +403,12 @@ int main(int argc, char **argv) {
     BORun *run = &runStorage;
     char line[1024];
     char seed[16] = "ABCDEFGH";
+    int start = 0;
     while (fgets(line, sizeof(line), file)) {
         if (strncmp(line, "seed ", 5) == 0) sscanf(line + 5, "%15s", seed);
+        if (strncmp(line, "start", 5) == 0) start = 1;
     }
+    if (start) return print_start(file, seed);
     // The state of start_run with no deck, as tools/scenario.lua makes it.
     bo_run_start(run, seed);
     bo_random_start(&run->random, seed);

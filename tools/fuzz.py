@@ -3,12 +3,13 @@
 (tools/oracle.sh score) and with Balatro4S (build/fuzz/scenario), and
 prints each scenario where the results are not the same.
 
-Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--pack] [--voucher] [--blind] [--tag] [--round] [--each N] [--keep]
+Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--pack] [--voucher] [--blind] [--tag] [--start] [--round] [--each N] [--keep]
 With --use, each scenario uses a Tarot, Planet, or Spectral card on the hand
 in place of a play. With --pack, each scenario opens a booster pack in the
 shop and takes some of its cards. With --voucher, each scenario buys a
 voucher in the shop. With --blind, each play has a random blind. With --tag,
-each scenario skips blinds for random tags, then opens a shop. With --round,
+each scenario skips blinds for random tags, then opens a shop. With --start,
+each scenario starts a run with a random deck and compares the start. With --round,
 each play comes after a discard and ends the round. With --each N, each
 joker comes in N scenarios.
 """
@@ -277,8 +278,18 @@ def scenario(rng, jokers):
     return "\n".join(lines) + "\n"
 
 
+BACKS = ["b_red", "b_blue", "b_yellow", "b_green", "b_black", "b_magic", "b_nebula", "b_ghost", "b_abandoned",
+         "b_checkered", "b_zodiac", "b_painted", "b_anaglyph", "b_plasma", "b_erratic"]
+
+
+def start_scenario(rng):
+    # A new run with a random deck and seed: tools/start.lua runs start_run.
+    seed = "".join(rng.choice("123456789ABCDEFGHIJKLMNPQRSTUVWXYZ") for _ in range(8))
+    return "seed %s\nback %s\nstake 1\nstart\n" % (seed, rng.choice(BACKS))
+
+
 def run(command):
-    return subprocess.run(command, capture_output=True, text=True).stdout
+    return subprocess.run(command, capture_output=True, text=True, errors="replace").stdout
 
 
 def main():
@@ -303,7 +314,9 @@ def main():
     for i in range(count):
         if "--each" in sys.argv:
             FORCED[:] = [order[i]]
-        if "--tag" in sys.argv:
+        if "--start" in sys.argv:
+            text = start_scenario(rng)
+        elif "--tag" in sys.argv:
             text = tag_scenario(rng, jokers, all_tags())
         elif "--voucher" in sys.argv:
             text = voucher_scenario(rng, jokers, all_vouchers())

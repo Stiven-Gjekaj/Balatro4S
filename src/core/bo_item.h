@@ -45,6 +45,7 @@ typedef struct {
     uint8_t debuffed;
     uint8_t getting_sliced;
     uint8_t couponed;   // Coupon Tag: the card costs $0 in this shop.
+    uint8_t face_down;  // Amber Acorn turned the joker.
     int base_cost;
     int extra_cost;
     int cost;

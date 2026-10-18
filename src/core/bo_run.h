@@ -87,6 +87,12 @@ typedef struct BORun {
     int blind_dollars;
     int blind_disabled;
     int blind_triggered;
+    int blind_active;      // A blind is on: from its choice to its defeat.
+    int boss_prepped;      // Blind.prepped: The Fish and Crimson Heart.
+    int water_sub;         // The discards that The Water took.
+    int needle_sub;        // The hands that The Needle took.
+    uint8_t eye_hands[BO_HAND_COUNT];  // The Eye: the hands played.
+    int mouth_hand;        // The Mouth: the one hand, or BO_HAND_NONE.
     double chips;          // The score of this round.
 
     // round_resets and current_round.
@@ -210,6 +216,11 @@ int bo_run_play(BORun *run, uint64_t mask, BOScore *score);
 
 // Discards the cards that mask selects. Returns 0 when it is not allowed.
 int bo_run_discard(BORun *run, uint64_t mask);
+// The discard of G.FUNCS.discard_cards_from_highlighted. With hook (The
+// Hook), it uses no discard.
+void bo_run_discard_cards(BORun *run, uint64_t mask, int hook);
+// G.FUNCS.draw_from_deck_to_hand(count): draws count cards.
+void bo_run_draw_cards(BORun *run, int count);
 
 // Takes the money of the round and opens the shop.
 void bo_run_cash_out(BORun *run);

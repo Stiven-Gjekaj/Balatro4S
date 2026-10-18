@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bo_boss.h"
 #include "bo_joker.h"
 #include "bo_pool.h"
 #include "bo_rules.h"
@@ -240,15 +241,20 @@ void bo_consume_use(BORun *run, const BOItem *item, uint64_t highlighted) {
                 uint32_t uid = chosen[i]->uid;
                 *chosen[i] = *rightmost;
                 chosen[i]->uid = uid;
+                bo_boss_debuff_card(run, chosen[i]);
             }
         } else if (IS(STRENGTH)) {
             for (int i = 0; i < chosenCount; i++) {
                 int rank = chosen[i]->rank;
                 chosen[i]->rank = (uint8_t)(rank == BO_ACE ? 2 : rank + 1);
+                bo_boss_debuff_card(run, chosen[i]);
             }
         } else if (suitConv) {
             int suit = bo_rules_suit_by_name(suitConv);
-            for (int i = 0; i < chosenCount; i++) chosen[i]->suit = (uint8_t)suit;
+            for (int i = 0; i < chosenCount; i++) {
+                chosen[i]->suit = (uint8_t)suit;
+                bo_boss_debuff_card(run, chosen[i]);
+            }
         } else {
             int enhancement = bo_rules_enhancement_of(bo_center_by_key(modConv));
             for (int i = 0; i < chosenCount; i++) bo_rules_set_enhancement(run, chosen[i], enhancement);
@@ -275,6 +281,7 @@ void bo_consume_use(BORun *run, const BOItem *item, uint64_t highlighted) {
         for (int i = 0; i < copies; i++) {
             BOCard copy = model;
             copy.uid = bo_run_new_sort_id(run);
+            bo_boss_debuff_card(run, &copy);
             add_to_hand(run, copy);
         }
         bo_rules_playing_cards_added(run, copies);
@@ -282,11 +289,17 @@ void bo_consume_use(BORun *run, const BOItem *item, uint64_t highlighted) {
     if (IS(SIGIL) || IS(OUIJA)) {
         if (IS(SIGIL)) {
             int suit = random_suit(run, "sigil");
-            for (int i = 0; i < run->hand_count; i++) run->hand[i].suit = (uint8_t)suit;
+            for (int i = 0; i < run->hand_count; i++) {
+                run->hand[i].suit = (uint8_t)suit;
+                bo_boss_debuff_card(run, &run->hand[i]);
+            }
         } else {
             static const int ranks[13] = {2, 3, 4, 5, 6, 7, 8, 9, 10, BO_JACK, BO_QUEEN, BO_KING, BO_ACE};
             int rank = random_rank(run, ranks, 13, "ouija");
-            for (int i = 0; i < run->hand_count; i++) run->hand[i].rank = (uint8_t)rank;
+            for (int i = 0; i < run->hand_count; i++) {
+                run->hand[i].rank = (uint8_t)rank;
+                bo_boss_debuff_card(run, &run->hand[i]);
+            }
             bo_rules_change_hand_size(run, -1);
         }
     }

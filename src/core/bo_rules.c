@@ -3,6 +3,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "bo_boss.h"
 #include "bo_joker.h"
 #include "bo_run.h"
 
@@ -85,8 +86,9 @@ int bo_rules_enhancement_of(BOCenterId center) {
 }
 
 void bo_rules_set_enhancement(BORun *run, BOCard *card, int enhancement) {
-    (void)run;
     card->enhancement = (uint8_t)enhancement;
+    // Card:set_ability asks the blind for the debuff again.
+    bo_boss_debuff_card(run, card);
 }
 
 typedef int (*BOCardTest)(const BOCard *card, int value);
@@ -207,7 +209,7 @@ BOItem bo_rules_copy_item(BORun *run, const BOItem *other, int strip_edition) {
 }
 
 void bo_rules_disable_blind(BORun *run) {
-    run->blind_disabled = 1;
+    bo_boss_disable(run);
 }
 
 void bo_rules_add_tag(BORun *run, BOCenterId tag) {
@@ -250,6 +252,7 @@ void bo_rules_certificate(BORun *run) {
     else if (seal > 0.5) card.seal = BO_SEAL_BLUE;
     else if (seal > 0.25) card.seal = BO_SEAL_GOLD;
     else card.seal = BO_SEAL_PURPLE;
+    bo_boss_debuff_card(run, &card);
     if (run->hand_count < BO_MAX_HAND) run->hand[run->hand_count++] = card;
     bo_run_sort_hand(run, run->sort_by_suit);
     bo_rules_playing_cards_added(run, 1);
@@ -266,5 +269,6 @@ void bo_rules_add_stone_card(BORun *run) {
 void bo_rules_dna_copy(BORun *run, const BOCard *card) {
     BOCard copy = *card;
     copy.uid = bo_run_new_sort_id(run);
+    bo_boss_debuff_card(run, &copy);
     if (run->hand_count < BO_MAX_HAND) run->hand[run->hand_count++] = copy;
 }

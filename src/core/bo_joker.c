@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "bo_boss.h"
 #include "bo_rules.h"
 #include "bo_run.h"
 
@@ -1045,6 +1046,9 @@ void bo_joker_add_to_deck(BORun *run, BOItem *self) {
             run->joker_slots++;
         }
     }
+    // An event of add_to_deck sets the blind again: Pareidolia can change
+    // the debuffs of The Plant.
+    bo_boss_reset_debuffs(run);
 }
 
 void bo_joker_remove_from_deck(BORun *run, BOItem *self) {
@@ -1076,6 +1080,7 @@ void bo_joker_remove_from_deck(BORun *run, BOItem *self) {
             run->joker_slots--;
         }
     }
+    bo_boss_reset_debuffs(run);
 }
 
 int bo_joker_dollar_bonus(BORun *run, BOItem *self, int *has) {

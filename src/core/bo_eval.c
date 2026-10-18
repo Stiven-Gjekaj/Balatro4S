@@ -7,6 +7,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "bo_boss.h"
 #include "bo_joker.h"
 #include "bo_rules.h"
 #include "bo_run.h"
@@ -460,23 +461,17 @@ int bo_eval_count_destroyed(const BORun *run) {
     return count;
 }
 
-// The boss blinds and the decks come in 0.5 and 0.8. Until then, no boss
-// changes the hand, and the Red Deck has no last step.
 int bo_eval_blind_debuffs_hand(BORun *run, const BOCard *played, int count, const BOHandResult *hands,
                                BOHandType text) {
-    (void)run;
     (void)played;
-    (void)count;
-    (void)hands;
-    (void)text;
-    return 0;
+    return bo_boss_debuff_hand(run, count, hands, text, 0);
 }
 
 void bo_eval_blind_modify_hand(BORun *run, BOScore *score) {
-    (void)run;
-    (void)score;
+    bo_boss_modify_hand(run, &score->mult, &score->chips);
 }
 
+// The decks come in 0.8. Until then, the Red Deck has no last step.
 void bo_eval_deck_final_step(BORun *run, BOScore *score) {
     (void)run;
     (void)score;

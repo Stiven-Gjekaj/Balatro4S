@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bo_boss.h"
 #include "bo_consume.h"
 #include "bo_eval.h"
 #include "bo_joker.h"
@@ -86,14 +87,26 @@ void bo_run_sort_hand(BORun *run, int by_suit) {
     qsort(run->hand, run->hand_count, sizeof(BOCard), compare_nominal);
 }
 
+// Draws count cards from the top of the deck. A boss can turn a card face
+// down as it comes.
+void bo_run_draw_cards(BORun *run, int count) {
+    if (count > run->deck_count) count = run->deck_count;
+    for (int i = 0; i < count && run->hand_count < BO_MAX_HAND; i++) {
+        BOCard card = run->deck[--run->deck_count];
+        card.face_down = (uint8_t)bo_boss_stay_flipped(run, &card);
+        run->hand[run->hand_count++] = card;
+    }
+    bo_run_sort_hand(run, run->sort_by_suit);
+}
+
+// G.FUNCS.draw_from_deck_to_hand: fills the hand. The Serpent draws 3.
 static void draw_to_hand(BORun *run) {
     int limit = run->hand_size > 0 ? run->hand_size : 0;
     int space = limit - run->hand_count;
     if (space > run->deck_count) space = run->deck_count;
-    for (int i = 0; i < space && run->hand_count < BO_MAX_HAND; i++) {
-        run->hand[run->hand_count++] = run->deck[--run->deck_count];
-    }
-    bo_run_sort_hand(run, run->sort_by_suit);
+    int serpent = bo_boss_draw_count(run);
+    if (serpent >= 0) space = serpent;
+    bo_run_draw_cards(run, space);
 }
 
 // The playing cards in G.playing_cards order: the order of creation.
@@ -181,6 +194,7 @@ void bo_run_start(BORun *run, const char *seed) {
     run->last_tarot_planet = BO_CENTER_NONE;
     run->ecto_minus = 1;
     run->pack = BO_CENTER_NONE;
+    run->mouth_hand = BO_HAND_NONE;
     run->last_hand_played = BO_HAND_NONE;
     run->most_played_hand = BO_HAND_HIGH_CARD;
     run->ancient_suit = BO_SPADES;
@@ -260,11 +274,14 @@ void bo_run_select_blind(BORun *run) {
     const BOBlindInfo *info = bo_blind_info(run->blind);
     run->blind_chips = bo_run_slot_chips(run, run->slot);
     run->blind_dollars = info->dollars;
-    run->blind_disabled = 0;
+    for (int i = 0; i < run->hand_count; i++) run->hand[i].face_down = 0;
+    for (int i = 0; i < run->deck_count; i++) run->deck[i].face_down = 0;
     // From stake 2 on, the Small Blind gives no reward.
     if (run->stake >= 2 && run->slot == BO_SLOT_SMALL) run->blind_dollars = 0;
     run->chips = 0;
     run->round++;
+    run->state = BO_STATE_SELECTING;
+    bo_boss_set_blind(run);
     for (int i = 0; i < run->joker_count; i++) {
         BOContext ctx = context_for(BO_CTX_SETTING_BLIND);
         ctx.blind_boss = info->boss;
@@ -279,7 +296,7 @@ void bo_run_select_blind(BORun *run) {
         BOContext ctx = context_for(BO_CTX_FIRST_HAND_DRAWN);
         bo_joker_calculate(run, &run->jokers[i], &ctx);
     }
-    run->state = BO_STATE_SELECTING;
+    bo_boss_drawn_to_hand(run);
 }
 
 // Moves the cards of the hand that mask selects to out, in hand order.
@@ -337,6 +354,7 @@ static void end_round(BORun *run) {
         run->state = BO_STATE_GAME_OVER;
         return;
     }
+    bo_boss_defeat(run);
     run->unused_discards += run->discards_left;
     if (blind->boss) {
         int best = BO_HAND_HIGH_CARD, played = -1, order = 100;
@@ -442,7 +460,13 @@ int bo_run_play(BORun *run, uint64_t mask, BOScore *score) {
     run->blind_triggered = 0;
     run->play_count = take_from_hand(run, mask, run->play);
     run->hands_left--;
-    for (int i = 0; i < run->play_count; i++) run->play[i].played_this_ante = 1;
+    for (int i = 0; i < run->play_count; i++) {
+        run->play[i].played_this_ante = 1;
+        run->play[i].face_down = 0;
+        run->play[i].forced_selection = 0;
+    }
+    for (int i = 0; i < run->hand_count; i++) run->hand[i].forced_selection = 0;
+    bo_boss_press_play(run);
     bo_eval_play(run, score);
     // draw_from_play_to_discard: the destroyed cards leave the game.
     for (int i = 0; i < run->play_count; i++) {
@@ -460,14 +484,17 @@ int bo_run_play(BORun *run, uint64_t mask, BOScore *score) {
         end_round(run);
     } else {
         draw_to_hand(run);
+        bo_boss_drawn_to_hand(run);
     }
     return 1;
 }
 
-int bo_run_discard(BORun *run, uint64_t mask) {
+void bo_run_discard_cards(BORun *run, uint64_t mask, int hook) {
     int count = count_bits(mask, run->hand_count);
-    if (run->state != BO_STATE_SELECTING || run->discards_left <= 0 || count < 1 || count > BO_MAX_PLAY) return 0;
-    BOCard cards[BO_MAX_PLAY];
+    BOCard cards[BO_MAX_HAND];
+    for (int i = 0; i < run->hand_count + run->deck_count + run->discard_count; i++) {
+        if (i < run->hand_count) run->hand[i].forced_selection = 0;
+    }
     take_from_hand(run, mask, cards);
     BOHandRules rules = bo_eval_rules(run);
     BOHandResult result = bo_hand_evaluate(cards, count, &rules);
@@ -476,6 +503,7 @@ int bo_run_discard(BORun *run, uint64_t mask) {
         ctx.full_hand = cards;
         ctx.full_count = count;
         ctx.scoring_name = result.type;
+        ctx.hook = hook;
         bo_joker_calculate(run, &run->jokers[j], &ctx);
     }
     int destroyedGlass = 0, destroyedFaces = 0, destroyed = 0;
@@ -507,6 +535,7 @@ int bo_run_discard(BORun *run, uint64_t mask) {
             if (bo_rules_is_face(run, card, 0)) destroyedFaces++;
             card->destroyed = 1;
         } else {
+            card->face_down = 0;
             run->discard[run->discard_count++] = *card;
         }
     }
@@ -520,9 +549,18 @@ int bo_run_discard(BORun *run, uint64_t mask) {
         }
     }
     bo_run_remove_marked_jokers(run);
-    run->discards_left--;
-    run->discards_used++;
+    if (!hook) {
+        bo_rules_ease_discard(run, -1);
+        run->discards_used++;
+    }
+}
+
+int bo_run_discard(BORun *run, uint64_t mask) {
+    int count = count_bits(mask, run->hand_count);
+    if (run->state != BO_STATE_SELECTING || run->discards_left <= 0 || count < 1 || count > BO_MAX_PLAY) return 0;
+    bo_run_discard_cards(run, mask, 0);
     draw_to_hand(run);
+    bo_boss_drawn_to_hand(run);
     return 1;
 }
 
@@ -665,6 +703,13 @@ static int sell_item(BORun *run, BOItem *items, int *count, int index) {
     }
     bo_run_ease_dollars(run, sell);
     bo_run_remove_marked_jokers(run);
+    // Verdant Leaf ends when a joker is sold.
+    if (isJoker && run->blind_active && run->blind == BO_BL_FINAL_LEAF) bo_boss_disable(run);
+    // A boss that is disabled can leave a round that is already won.
+    if (run->state == BO_STATE_SELECTING && run->blind_disabled && bo_blind_info(run->blind)->boss &&
+        run->chips >= run->blind_chips) {
+        end_round(run);
+    }
     return 1;
 }
 

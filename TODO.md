@@ -62,14 +62,19 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 - Port the 5 legendary jokers.
 - Compare each joker with the original in a test.
 
-## 0.7: the feel
+## 0.7: the feel (done, 2026-10-18)
 
 - Draw the editions with shaders that the A5 can run at 60 frames per second.
 - Add the animations: deal, draw, play, score, and the shake of a card.
-- Decode the sounds from Ogg Vorbis on the phone, and play them.
-- Play the 5 music tracks, with the changes between the shop, the packs, and the blinds.
 - Add the moving background of the original.
-- Record videos of the game with a screen recorder from Cydia.
+
+## 0.7.1: sound and video
+
+- Decode the sounds from Ogg Vorbis on the phone, and play them. This needs
+  a Vorbis decoder, as stb_vorbis, in the repository.
+- Play the 5 music tracks, with the changes between the shop, the packs, and the blinds.
+- Record videos of the game with a screen recorder from Cydia. RecordMyScreen
+  is on the phone. A person must start it with a tap.
 
 ## 0.8: progress
 

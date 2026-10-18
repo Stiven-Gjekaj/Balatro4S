@@ -1102,6 +1102,13 @@ static void show_event(const BOScoreEvent *event) {
         snprintf(text, sizeof(text), "Debuffed");
         color = BO_C_RED;
         break;
+    case BO_EVENT_BALANCED:
+        // The Plasma Deck: the text shows over the played cards.
+        snprintf(text, sizeof(text), "Balanced");
+        color = 0xcc73d9;
+        x = main_area().x + main_area().w / 2;
+        y = G.height * 0.22f;
+        break;
     default:
         snprintf(text, sizeof(text), "!");
         color = BO_C_ORANGE;
@@ -1354,14 +1361,16 @@ static void draw_cash_out(void) {
         }
         const char *label = "";
         unsigned int color = BO_C_WHITE;
-        char count[16] = "";
+        char count[16] = "", each[40];
         if (row->kind == BO_EVAL_HANDS) {
             snprintf(count, sizeof(count), "%d", row->count);
-            label = "Remaining Hands ($1 each)";
+            snprintf(each, sizeof(each), "Remaining Hands ($%d each)", run->money_per_hand);
+            label = each;
             color = BO_C_BLUE;
         } else if (row->kind == BO_EVAL_DISCARDS) {
             snprintf(count, sizeof(count), "%d", row->count);
-            label = "Remaining Discards ($1 each)";
+            snprintf(each, sizeof(each), "Remaining Discards ($%d each)", run->money_per_discard);
+            label = each;
             color = BO_C_RED;
         } else if (row->kind == BO_EVAL_INTEREST) {
             snprintf(count, sizeof(count), "%d", row->count);

@@ -65,3 +65,19 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
   a milestone is complete and its tests pass on the phone, the agent
   pushes the commits, adds the tag, publishes the GitHub release with the
   .deb, adds the .deb to the Cydia repository, and closes the issues.
+
+## The random numbers
+
+- **A seed gives the same run as in Balatro** (0.2, 2026-10-18). Balatro
+  seeds the `math.random` of LuaJIT with `pseudoseed`, a hash of a key such
+  as `nr1` and the seed of the run. `bo_random` ports `pseudohash`,
+  `pseudoseed`, `pseudoshuffle`, `random_string`, and the TW223 generator
+  of LuaJIT.
+- **The game math turns off the fused multiply-add.** Clang joins `a * b +
+  c` into one instruction on arm64, which rounds one time less. LuaJIT does
+  each step on its own, so `build.sh` and `scripts/test.sh` give
+  `-ffp-contract=off`.
+- **The oracle runs the code of Balatro in the LuaJIT of Balatro.app**
+  (`tools/oracle.sh`). The LuaJIT of Homebrew is built with the fused
+  multiply-add in `math.randomseed`, and gives other numbers. The tests hold
+  the numbers of the oracle. They do not read Balatro.love.

@@ -21,6 +21,10 @@
 --   castle Hearts         (the suit of Castle)
 --   play S_A S_K:m_glass:holo:Red
 --   hand H_2:m_steel
+--   use c_key 1 3         (use a consumable on cards 1 and 3 of the hand,
+--                          and print the state after it, in place of a play)
+--   last c_key            (G.GAME.last_tarot_planet)
+--   eternal 2             (joker 2 is eternal)
 -- A card is a key of P_CARDS, then an enhancement, an edition, and a seal.
 
 local dir, file = arg[1], arg[3]
@@ -90,7 +94,7 @@ local function set_ability(card, words)
     end
 end
 
-local plays, holds = {}, {}
+local plays, holds, use = {}, {}, nil
 for _, w in ipairs(lines) do
     local key = w[1]
     if key == 'ante' then G.GAME.round_resets.ante = tonumber(w[2])
@@ -122,6 +126,11 @@ for _, w in ipairs(lines) do
         for i = 2, #w do plays[#plays + 1] = playing_card(w[i]) end
     elseif key == 'hand' then
         for i = 2, #w do holds[#holds + 1] = playing_card(w[i]) end
+    elseif key == 'use' then
+        use = {key = w[2], picks = {}}
+        for i = 3, #w do use.picks[#use.picks + 1] = tonumber(w[i]) end
+    elseif key == 'last' then G.GAME.last_tarot_planet = w[2]
+    elseif key == 'eternal' then G.jokers.cards[tonumber(w[2])]:set_eternal(true)
     end
 end
 B.manager:run_all()
@@ -129,6 +138,87 @@ B.manager:run_all()
 -- card gets a place from left to right.
 for i, c in ipairs(plays) do G.play:emplace(c); c.T.x = i end
 for i, c in ipairs(holds) do G.hand:emplace(c); c.T.x = i end
+local function print_jokers()
+    for i, j in ipairs(G.jokers.cards) do
+        local parts = {string.format('joker %d %s mult=%.17g x_mult=%.17g', i, j.config.center.key, j.ability.mult,
+                                     j.ability.x_mult)}
+        if type(j.ability.extra) == 'number' then
+            parts[#parts + 1] = string.format('extra=%.17g', j.ability.extra)
+        elseif type(j.ability.extra) == 'table' then
+            local keys = {}
+            for k, v in pairs(j.ability.extra) do if type(v) == 'number' then keys[#keys + 1] = k end end
+            table.sort(keys)
+            for _, k in ipairs(keys) do parts[#parts + 1] = string.format('extra_%s=%.17g', k, j.ability.extra[k]) end
+        end
+        print(table.concat(parts, ' '))
+    end
+end
+
+local function print_levels()
+    local levels = {}
+    for k, v in pairs(G.GAME.hands) do if v.level ~= 1 then levels[#levels + 1] = k:gsub(' ', '_') .. '=' .. v.level end end
+    table.sort(levels)
+    print(#levels > 0 and ('levels ' .. table.concat(levels, ' ')) or 'levels')
+end
+
+local function card_text(c)
+    local letters = {['10'] = 'T', Jack = 'J', Queen = 'Q', King = 'K', Ace = 'A'}
+    local text = c.base.suit:sub(1, 1) .. '_' .. (letters[c.base.value] or c.base.value)
+    if c.config.center.key ~= 'c_base' then text = text .. ':' .. c.config.center.key end
+    if c.edition then text = text .. ':' .. c.edition.type end
+    if c.seal then text = text .. ':' .. c.seal end
+    return text
+end
+
+if use then
+    -- G.FUNCS.use_card for a card in the consumable slots, with no screen.
+    set_consumeable_usage = B.real.set_consumeable_usage
+    G.PROFILES[1].consumeable_usage = {}
+    G.save_settings = function() end
+    G.CONTROLLER = {locks = {}}
+    G.STATE = G.STATES.SELECTING_HAND
+    G.STAGE = G.STAGES.RUN
+    Card.update_alert = function() end
+    get_joker_win_sticker = function() return nil end
+    local card = Card(0, 0, 1, 1, nil, G.P_CENTERS[use.key])
+    card:add_to_deck()
+    G.consumeables:emplace(card)
+    for _, p in ipairs(use.picks) do G.hand.highlighted[#G.hand.highlighted + 1] = G.hand.cards[p] end
+    for _, c in ipairs(G.jokers.cards) do c:update(0) end
+    for _, c in ipairs(G.consumeables.cards) do c:update(0) end
+    local can = card:can_use_consumeable(nil, true)
+    if can and card.ability.name == 'Ankh' and #G.jokers.cards >= G.jokers.config.card_limit then can = false end
+    print('can_use ' .. tostring(can and true or false))
+    if can then
+        local area = card.area
+        area:remove_card(card)
+        card:use_consumeable(area)
+        for i = 1, #G.jokers.cards do
+            G.jokers.cards[i]:calculate_joker({using_consumeable = true, consumeable = card})
+        end
+        B.manager:run_all()
+        card:remove()
+        B.manager:run_all()
+    end
+    local hand = {}
+    for _, c in ipairs(G.hand.cards) do hand[#hand + 1] = ' ' .. card_text(c) end
+    print('hand' .. table.concat(hand))
+    print('hand_size ' .. G.hand.config.card_limit)
+    print('dollars ' .. G.GAME.dollars)
+    print('joker_slots ' .. G.jokers.config.card_limit)
+    for i, j in ipairs(G.jokers.cards) do
+        print(string.format('joker_card %d %s%s%s', i, j.config.center.key, j.edition and (':' .. j.edition.type) or '',
+                            j.ability.eternal and ':eternal' or ''))
+    end
+    print_jokers()
+    print('consumable_slots ' .. G.consumeables.config.card_limit)
+    for i, c in ipairs(G.consumeables.cards) do
+        print(string.format('consumable %d %s%s', i, c.config.center.key, c.edition and (':' .. c.edition.type) or ''))
+    end
+    print_levels()
+    os.exit(0)
+end
+
 -- play_cards_from_highlighted uses one hand before the score.
 G.GAME.current_round.hands_left = G.GAME.current_round.hands_left - 1
 
@@ -155,21 +245,6 @@ print(string.format('chips %.17g', last.chips))
 print(string.format('mult %.17g', last.mult))
 print(string.format('total %.17g', G.GAME.chips))
 print('dollars ' .. G.GAME.dollars)
-for i, j in ipairs(G.jokers.cards) do
-    local parts = {string.format('joker %d %s mult=%.17g x_mult=%.17g', i, j.config.center.key, j.ability.mult,
-                                 j.ability.x_mult)}
-    if type(j.ability.extra) == 'number' then
-        parts[#parts + 1] = string.format('extra=%.17g', j.ability.extra)
-    elseif type(j.ability.extra) == 'table' then
-        local keys = {}
-        for k, v in pairs(j.ability.extra) do if type(v) == 'number' then keys[#keys + 1] = k end end
-        table.sort(keys)
-        for _, k in ipairs(keys) do parts[#parts + 1] = string.format('extra_%s=%.17g', k, j.ability.extra[k]) end
-    end
-    print(table.concat(parts, ' '))
-end
+print_jokers()
 print('consumables ' .. #G.consumeables.cards)
-local levels = {}
-for k, v in pairs(G.GAME.hands) do if v.level ~= 1 then levels[#levels + 1] = k:gsub(' ', '_') .. '=' .. v.level end end
-table.sort(levels)
-print(#levels > 0 and ('levels ' .. table.concat(levels, ' ')) or 'levels')
+print_levels()

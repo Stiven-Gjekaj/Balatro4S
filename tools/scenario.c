@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bo_consume.h"
 #include "bo_eval.h"
 #include "bo_pool.h"
 #include "bo_joker.h"
@@ -68,6 +69,128 @@ static void set_ability(BORun *run, BOItem *item, char **words, int count) {
     bo_rules_set_cost(run, item);
 }
 
+static void print_jokers(BORun *run) {
+    for (int i = 0; i < run->joker_count; i++) {
+        BOItem *j = &run->jokers[i];
+        if (j->getting_sliced) continue;
+        printf("joker %d %s mult=%.17g x_mult=%.17g", i + 1, bo_center(j->center)->key, j->ability.mult,
+               j->ability.x_mult);
+        const BOCenterInfo *c = bo_center(j->center);
+        int hasExtraTable = 0;
+        for (int f = 0; f < c->config_count; f++) {
+            if (strncmp(bo_field_name((BOField)c->config[f].field), "extra_", 6) == 0) hasExtraTable = 1;
+        }
+        int numberExtra = 0;
+        bo_center_number(c, BO_F_EXTRA, &numberExtra);
+        if (numberExtra) {
+            printf(" extra=%.17g", j->ability.extra);
+        } else if (hasExtraTable) {
+            // The fields of the extra table that are numbers, in the order of their names.
+            const char *names[BO_ABILITY_FIELDS];
+            double values[BO_ABILITY_FIELDS];
+            int n = 0;
+            for (int f = 0; f < j->ability.count; f++) {
+                const char *fname = bo_field_name((BOField)j->ability.fields[f]);
+                if (strncmp(fname, "extra_", 6) != 0) continue;
+                if (bo_center_text(c, (BOField)j->ability.fields[f])) continue;
+                names[n] = fname;
+                values[n] = j->ability.values[f];
+                n++;
+            }
+            for (int a = 0; a < n; a++) {
+                for (int b = a + 1; b < n; b++) {
+                    if (strcmp(names[b], names[a]) < 0) {
+                        const char *tn = names[a];
+                        names[a] = names[b];
+                        names[b] = tn;
+                        double tv = values[a];
+                        values[a] = values[b];
+                        values[b] = tv;
+                    }
+                }
+            }
+            for (int a = 0; a < n; a++) printf(" %s=%.17g", names[a], values[a]);
+        }
+        printf("\n");
+    }
+}
+
+static void print_levels(BORun *run) {
+    printf("levels");
+    const char *levelNames[BO_HAND_COUNT];
+    int levels[BO_HAND_COUNT], n = 0;
+    for (int i = 0; i < BO_HAND_COUNT; i++) {
+        if (run->hands[i].level != 1) {
+            levelNames[n] = bo_hand_name((BOHandType)i, 0);
+            levels[n++] = run->hands[i].level;
+        }
+    }
+    for (int a = 0; a < n; a++) {
+        for (int b = a + 1; b < n; b++) {
+            if (strcmp(levelNames[b], levelNames[a]) < 0) {
+                const char *t = levelNames[a];
+                levelNames[a] = levelNames[b];
+                levelNames[b] = t;
+                int tl = levels[a];
+                levels[a] = levels[b];
+                levels[b] = tl;
+            }
+        }
+    }
+    for (int a = 0; a < n; a++) {
+        char hand[32];
+        snprintf(hand, sizeof(hand), "%s", levelNames[a]);
+        for (char *c = hand; *c; c++) if (*c == ' ') *c = '_';
+        printf(" %s=%d", hand, levels[a]);
+    }
+    printf("\n");
+}
+
+static const char *edition_name(int edition) {
+    static const char *names[] = {"", "foil", "holo", "polychrome", "negative"};
+    return names[edition];
+}
+
+// A playing card as tools/scenario.lua prints it: S_A:m_glass:holo:Red.
+static void print_card(const BOCard *card) {
+    static const char kSuits[] = "SHCD";
+    static const char kRanks[] = "23456789TJQKA";
+    static const char *seals[] = {"", "Gold", "Red", "Blue", "Purple"};
+    printf(" %c_%c", kSuits[card->suit], kRanks[card->rank - 2]);
+    if (card->enhancement) printf(":%s", bo_center(bo_rules_enhancement_center(card->enhancement))->key);
+    if (card->edition) printf(":%s", edition_name(card->edition));
+    if (card->seal) printf(":%s", seals[card->seal]);
+}
+
+// Uses a consumable on the hand, and prints the state after it.
+static void use_card(BORun *run, BOCenterId center, uint64_t highlighted) {
+    BOItem item = bo_pool_make_item(run, center);
+    bo_run_add_consumable(run, &item);
+    for (int i = 0; i < run->joker_count; i++) bo_joker_update(run, &run->jokers[i]);
+    int index = run->consumable_count - 1;
+    int can = bo_run_can_use_consumable(run, index, highlighted);
+    printf("can_use %s\n", can ? "true" : "false");
+    if (can) bo_run_use_consumable(run, index, highlighted);
+    printf("hand");
+    for (int i = 0; i < run->hand_count; i++) print_card(&run->hand[i]);
+    printf("\n");
+    printf("hand_size %d\n", run->hand_size > 0 ? run->hand_size : 0);
+    printf("dollars %d\n", run->dollars);
+    printf("joker_slots %d\n", run->joker_slots);
+    for (int i = 0; i < run->joker_count; i++) {
+        printf("joker_card %d %s%s%s%s\n", i + 1, bo_center(run->jokers[i].center)->key,
+               run->jokers[i].edition ? ":" : "", edition_name(run->jokers[i].edition),
+               run->jokers[i].eternal ? ":eternal" : "");
+    }
+    print_jokers(run);
+    printf("consumable_slots %d\n", run->consumable_slots);
+    for (int i = 0; i < run->consumable_count; i++) {
+        printf("consumable %d %s%s%s\n", i + 1, bo_center(run->consumables[i].center)->key,
+               run->consumables[i].edition ? ":" : "", edition_name(run->consumables[i].edition));
+    }
+    print_levels(run);
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: scenario FILE\n");
@@ -100,6 +223,8 @@ int main(int argc, char **argv) {
     run->ancient_suit = BO_SPADES;
     run->castle_suit = BO_SPADES;
 
+    BOCenterId useCenter = BO_CENTER_NONE;
+    uint64_t useMask = 0;
     rewind(file);
     while (fgets(line, sizeof(line), file)) {
         char *words[64];
@@ -145,9 +270,25 @@ int main(int argc, char **argv) {
             for (int i = 1; i < count; i++) parse_card(run, words[i], &run->play[run->play_count++]);
         } else if (strcmp(key, "hand") == 0) {
             for (int i = 1; i < count; i++) parse_card(run, words[i], &run->hand[run->hand_count++]);
+        } else if (strcmp(key, "use") == 0) {
+            useCenter = bo_center_by_key(words[1]);
+            for (int i = 2; i < count; i++) useMask |= (uint64_t)1 << (atoi(words[i]) - 1);
+        } else if (strcmp(key, "last") == 0) {
+            run->last_tarot_planet = bo_center_by_key(words[1]);
+        } else if (strcmp(key, "eternal") == 0) {
+            int i = atoi(words[1]) - 1;
+            // set_eternal: only a joker that can be eternal.
+            if (i >= 0 && i < run->joker_count && bo_item_center(&run->jokers[i])->eternal_compat &&
+                !run->jokers[i].perishable) {
+                run->jokers[i].eternal = 1;
+            }
         }
     }
     fclose(file);
+    if (useCenter != BO_CENTER_NONE) {
+        use_card(run, useCenter, useMask);
+        return 0;
+    }
     run->hands_left--;
 
     BOScore score;
@@ -162,77 +303,8 @@ int main(int argc, char **argv) {
     printf("mult %.17g\n", score.mult);
     printf("total %.17g\n", run->chips);
     printf("dollars %d\n", run->dollars);
-    for (int i = 0; i < run->joker_count; i++) {
-        BOItem *j = &run->jokers[i];
-        if (j->getting_sliced) continue;
-        printf("joker %d %s mult=%.17g x_mult=%.17g", i + 1, bo_center(j->center)->key, j->ability.mult,
-               j->ability.x_mult);
-        const BOCenterInfo *c = bo_center(j->center);
-        int hasExtraTable = 0;
-        for (int f = 0; f < c->config_count; f++) {
-            if (strncmp(bo_field_name((BOField)c->config[f].field), "extra_", 6) == 0) hasExtraTable = 1;
-        }
-        int numberExtra = 0;
-        bo_center_number(c, BO_F_EXTRA, &numberExtra);
-        if (numberExtra) {
-            printf(" extra=%.17g", j->ability.extra);
-        } else if (hasExtraTable) {
-            // The fields of the extra table that are numbers, in the order of their names.
-            const char *names[BO_ABILITY_FIELDS];
-            double values[BO_ABILITY_FIELDS];
-            int n = 0;
-            for (int f = 0; f < j->ability.count; f++) {
-                const char *fname = bo_field_name((BOField)j->ability.fields[f]);
-                if (strncmp(fname, "extra_", 6) != 0) continue;
-                if (bo_center_text(c, (BOField)j->ability.fields[f])) continue;
-                names[n] = fname;
-                values[n] = j->ability.values[f];
-                n++;
-            }
-            for (int a = 0; a < n; a++) {
-                for (int b = a + 1; b < n; b++) {
-                    if (strcmp(names[b], names[a]) < 0) {
-                        const char *tn = names[a];
-                        names[a] = names[b];
-                        names[b] = tn;
-                        double tv = values[a];
-                        values[a] = values[b];
-                        values[b] = tv;
-                    }
-                }
-            }
-            for (int a = 0; a < n; a++) printf(" %s=%.17g", names[a], values[a]);
-        }
-        printf("\n");
-    }
+    print_jokers(run);
     printf("consumables %d\n", run->consumable_count);
-    printf("levels");
-    const char *levelNames[BO_HAND_COUNT];
-    int levels[BO_HAND_COUNT], n = 0;
-    for (int i = 0; i < BO_HAND_COUNT; i++) {
-        if (run->hands[i].level != 1) {
-            levelNames[n] = bo_hand_name((BOHandType)i, 0);
-            levels[n++] = run->hands[i].level;
-        }
-    }
-    for (int a = 0; a < n; a++) {
-        for (int b = a + 1; b < n; b++) {
-            if (strcmp(levelNames[b], levelNames[a]) < 0) {
-                const char *t = levelNames[a];
-                levelNames[a] = levelNames[b];
-                levelNames[b] = t;
-                int tl = levels[a];
-                levels[a] = levels[b];
-                levels[b] = tl;
-            }
-        }
-    }
-    for (int a = 0; a < n; a++) {
-        char hand[32];
-        snprintf(hand, sizeof(hand), "%s", levelNames[a]);
-        for (char *c = hand; *c; c++) if (*c == ' ') *c = '_';
-        printf(" %s=%d", hand, levels[a]);
-    }
-    printf("\n");
+    print_levels(run);
     return 0;
 }

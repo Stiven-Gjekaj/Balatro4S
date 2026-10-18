@@ -101,6 +101,8 @@ return function(dir)
 
     -- The screen calls of the rules do nothing.
     local function nothing() end
+    -- The real functions that the stubs replace, for a script that needs one.
+    local real = {}
     -- update_hand_text keeps the last chips and mult, which are the result.
     local shown = {}
     function update_hand_text(config, vals)
@@ -119,6 +121,7 @@ return function(dir)
                            'set_consumeable_usage', 'set_voucher_usage', 'check_and_set_high_score',
                            'inc_career_stat', 'ease_background_colour', 'ease_background_colour_blind',
                            'ease_colour', 'save_run', 'stop_use', 'play_area_status_text'}) do
+        real[name] = _G[name]
         _G[name] = nothing
     end
     for _, name in ipairs({'start_materialize', 'juice_up', 'align_h_popup', 'hover', 'stop_hover', 'flip'}) do
@@ -222,5 +225,5 @@ return function(dir)
         for k, v in pairs(self.P_CENTERS) do v.unlocked = true; v.discovered = true end
     end
 
-    return {manager = manager, shown = shown}
+    return {manager = manager, shown = shown, real = real}
 end

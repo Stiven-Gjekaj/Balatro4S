@@ -1677,6 +1677,15 @@ void bo_game_debug(const char *line) {
             }
         }
         fprintf(stderr, "debug: joker %s\n", word);
+    } else if (sscanf(line, "boss %63s", word) == 1) {
+        // The boss comes next.
+        for (int b = 0; b < BO_BLIND_COUNT; b++) {
+            if (strcmp(bo_blind_info((BOBlindId)b)->key, word) == 0 && G.run->state == BO_STATE_BLIND_SELECT) {
+                G.run->boss = (BOBlindId)b;
+                G.run->slot = BO_SLOT_BOSS;
+            }
+        }
+        fprintf(stderr, "debug: boss %s\n", word);
     } else if (sscanf(line, "voucher %63s", word) == 1) {
         BOCenterId center = bo_center_by_key(word);
         if (center != BO_CENTER_NONE && bo_center(center)->set == BO_SET_VOUCHER) {

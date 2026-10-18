@@ -1,5 +1,7 @@
 #include "bo_game.h"
 
+#include <sys/time.h>
+#include <mach/mach.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -486,8 +488,15 @@ static void new_run(void) {
     fprintf(stderr, "new run: seed %s, %s, stake %d\n", seed, bo_center(G.run->back)->key, G.run->stake);
 }
 
+static double wall_seconds(void) {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    return now.tv_sec + now.tv_usec / 1e6;
+}
+
 int bo_game_start(const char *love_path, int width, int height) {
     freopen("/tmp/Balatro4S.log", "w", stderr);
+    double startTime = wall_seconds();
     G.width = width;
     G.height = height;
     BOZip *zip = bo_zip_open(love_path);
@@ -559,6 +568,7 @@ int bo_game_start(const char *love_path, int width, int height) {
         return 0;
     }
     fprintf(stderr, "text: %s\n", G.text ? "loaded" : "missing");
+    fprintf(stderr, "start: %.2f s to load Balatro.love\n", wall_seconds() - startTime);
     G.run = calloc(1, sizeof(BORun));
     G.setupBack = BO_B_RED;
     G.setupStake = 1;
@@ -2729,7 +2739,15 @@ void bo_game_frame(double dt) {
     G.time += dt;
     G.frames++;
     if (G.time - G.fpsTime >= 5) {
-        fprintf(stderr, "fps %.1f, draw calls %d\n", G.frames / (G.time - G.fpsTime), bo_gfx_draw_calls());
+        // The resident memory of the app, from the Mach task info.
+        struct mach_task_basic_info info;
+        mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
+        double megabytes = 0;
+        if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &infoCount) == KERN_SUCCESS) {
+            megabytes = info.resident_size / 1048576.0;
+        }
+        fprintf(stderr, "fps %.1f, draw calls %d, memory %.1f MB\n", G.frames / (G.time - G.fpsTime),
+                bo_gfx_draw_calls(), megabytes);
         fflush(stderr);
         G.frames = 0;
         G.fpsTime = G.time;

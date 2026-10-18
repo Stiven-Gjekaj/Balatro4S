@@ -84,7 +84,7 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 - Add the profile, the unlocks, and the discovery of the cards.
 - Add the collection screens.
 
-## 0.9: challenges and polish
+## 0.9: challenges and polish (done, 2026-10-18)
 
 - Port the 20 challenges.
 - Add the statistics of the profile.

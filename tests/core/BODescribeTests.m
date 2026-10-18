@@ -202,3 +202,22 @@ BO_TEST(test_describe_writes_the_rules_of_a_challenge) {
     bo_describe_set_text(NULL);
     bo_luatab_free(text);
 }
+
+BO_TEST(test_describe_removes_the_spaces_in_a_box) {
+    // loc_parse_string removes the spaces of a part with an X control.
+    BOLuaValue *text = bo_luatab_parse(
+        "return { descriptions = { Joker = {\n"
+        "  j_duo = { name = 'The Duo', text = { '{X:mult,C:white} X#1# {} Mult if played', 'a {C:attention}#2#' } },\n"
+        "} } }");
+    bo_describe_set_text(text);
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    BOItem duo = bo_pool_make_item(run, BO_J_DUO);
+    BODescription d;
+    BO_EXPECT(bo_describe_item(run, &duo, &d));
+    BO_EQUAL(@(d.lines[0]), @"{X:mult,C:white}X2{} Mult if played");
+    BO_EQUAL(@(d.lines[1]), @"a {C:attention}Pair");
+    bo_describe_set_text(NULL);
+    bo_luatab_free(text);
+    free(run);
+}

@@ -350,7 +350,23 @@ static void other_vars(const BORun *run, const BOItem *item, BOVars *v) {
 // Replaces each #n# of line with the variable n.
 static void fill_line(const char *line, const BOVars *vars, char *out, int size) {
     int o = 0;
+    int boxed = 0;  // The part has an X control: a box with a colour.
     for (const char *p = line; *p && o < size - 1;) {
+        if (*p == '{') {
+            // The markup goes to out as it is. "{}" ends the part.
+            const char *end = strchr(p, '}');
+            if (end) {
+                const char *x = strstr(p, "X:");
+                boxed = x && x < end;
+                while (p <= end && o < size - 1) out[o++] = *p++;
+                continue;
+            }
+        }
+        // loc_parse_string removes the spaces from the text of a box.
+        if (boxed && (*p == ' ' || *p == '\t')) {
+            p++;
+            continue;
+        }
         if (*p == '#') {
             const char *end = strchr(p + 1, '#');
             if (end) {

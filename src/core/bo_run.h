@@ -232,6 +232,12 @@ void bo_run_end_shop(BORun *run);
 // Moves joker from to the place to, as a drag on the screen does.
 void bo_run_move_joker(BORun *run, int from, int to);
 
+// Card:remove: the center is not used any more when no joker or
+// consumable has it.
+void bo_run_forget_card(BORun *run, BOCenterId center);
+// Removes the jokers that an effect destroyed.
+void bo_run_remove_marked_jokers(BORun *run);
+
 // The number of dollars that the player can spend: dollars - bankrupt_at.
 int bo_run_spendable(const BORun *run);
 

@@ -231,7 +231,7 @@ static BOContext context_for(BOContextKind kind) {
 }
 
 // Removes the jokers that an effect marked: eaten, melted, destroyed.
-static void remove_marked_jokers(BORun *run) {
+void bo_run_remove_marked_jokers(BORun *run) {
     for (int i = run->joker_count - 1; i >= 0; i--) {
         if (run->jokers[i].getting_sliced) bo_run_remove_joker(run, i);
     }
@@ -269,7 +269,7 @@ void bo_run_select_blind(BORun *run) {
         ctx.blind_boss = info->boss;
         bo_joker_calculate(run, &run->jokers[i], &ctx);
     }
-    remove_marked_jokers(run);
+    bo_run_remove_marked_jokers(run);
     char key[16];
     snprintf(key, sizeof(key), "nr%d", run->ante);
     shuffle_deck(run, key);
@@ -330,7 +330,7 @@ static void end_round(BORun *run) {
     const BOBlindInfo *blind = bo_blind_info(run->blind);
     if (run->ante == run->win_ante && blind->boss) run->won = 1;
     if (game_over) {
-        remove_marked_jokers(run);
+        bo_run_remove_marked_jokers(run);
         for (int i = 0; i < run->hand_count; i++) run->discard[run->discard_count++] = run->hand[i];
         run->hand_count = 0;
         run->state = BO_STATE_GAME_OVER;
@@ -404,7 +404,7 @@ static void end_round(BORun *run) {
             if (dollars) bo_run_ease_dollars(run, dollars);
         }
     }
-    remove_marked_jokers(run);
+    bo_run_remove_marked_jokers(run);
 
     // The hand and the discard pile go back to the deck.
     for (int i = 0; i < run->hand_count; i++) run->discard[run->discard_count++] = run->hand[i];
@@ -452,7 +452,7 @@ int bo_run_play(BORun *run, uint64_t mask, BOScore *score) {
         if (!gone) run->discard[run->discard_count++] = *card;
     }
     run->play_count = 0;
-    remove_marked_jokers(run);
+    bo_run_remove_marked_jokers(run);
     run->hands_played_total++;
     run->hands_played++;
     if (run->chips >= run->blind_chips || run->hands_left < 1) {
@@ -518,7 +518,7 @@ int bo_run_discard(BORun *run, uint64_t mask) {
             bo_joker_calculate(run, &run->jokers[j], &ctx);
         }
     }
-    remove_marked_jokers(run);
+    bo_run_remove_marked_jokers(run);
     run->discards_left--;
     run->discards_used++;
     draw_to_hand(run);
@@ -553,7 +553,7 @@ void bo_run_cash_out(BORun *run) {
 
 // --- The shop -------------------------------------------------------------
 
-static void forget_card(BORun *run, BOCenterId center) {
+void bo_run_forget_card(BORun *run, BOCenterId center) {
     // Card:remove: the card is not used any more, when no card with its
     // name is in the jokers or the consumables.
     if (center == BO_CENTER_NONE) return;
@@ -597,7 +597,7 @@ int bo_run_reroll(BORun *run) {
     BOCenterId gone[BO_MAX_SHOP];
     for (int i = 0; i < old; i++) gone[i] = run->shop[i].item.center;
     run->shop_count = 0;
-    for (int i = old - 1; i >= 0; i--) forget_card(run, gone[i]);
+    for (int i = old - 1; i >= 0; i--) bo_run_forget_card(run, gone[i]);
     for (int i = 0; i < run->shop_joker_max && run->shop_count < BO_MAX_SHOP; i++) {
         run->shop[run->shop_count++] = bo_pool_create_shop_card(run);
     }
@@ -654,7 +654,7 @@ static int sell_item(BORun *run, BOItem *items, int *count, int index) {
         bo_joker_remove_from_deck(run, item);
         memmove(&items[index], &items[index + 1], sizeof(BOItem) * (*count - index - 1));
         (*count)--;
-        forget_card(run, sold.center);
+        bo_run_forget_card(run, sold.center);
     }
     for (int i = 0; i < run->joker_count; i++) {
         BOContext ctx = context_for(BO_CTX_SELLING_CARD);
@@ -662,7 +662,7 @@ static int sell_item(BORun *run, BOItem *items, int *count, int index) {
         bo_joker_calculate(run, &run->jokers[i], &ctx);
     }
     bo_run_ease_dollars(run, sell);
-    remove_marked_jokers(run);
+    bo_run_remove_marked_jokers(run);
     return 1;
 }
 
@@ -691,8 +691,8 @@ int bo_run_use_consumable(BORun *run, int index, uint64_t highlighted) {
     run->consumable_count--;
     bo_consume_use(run, &item, highlighted);
     bo_joker_remove_from_deck(run, &item);
-    forget_card(run, item.center);
-    remove_marked_jokers(run);
+    bo_run_forget_card(run, item.center);
+    bo_run_remove_marked_jokers(run);
     return 1;
 }
 
@@ -702,9 +702,9 @@ void bo_run_end_shop(BORun *run) {
         BOContext ctx = context_for(BO_CTX_ENDING_SHOP);
         bo_joker_calculate(run, &run->jokers[i], &ctx);
     }
-    for (int i = 0; i < run->shop_count; i++) forget_card(run, run->shop[i].item.center);
-    if (run->has_shop_voucher) forget_card(run, run->shop_voucher.center);
-    for (int i = 0; i < run->shop_pack_count; i++) forget_card(run, run->shop_packs[i].center);
+    for (int i = 0; i < run->shop_count; i++) bo_run_forget_card(run, run->shop[i].item.center);
+    if (run->has_shop_voucher) bo_run_forget_card(run, run->shop_voucher.center);
+    for (int i = 0; i < run->shop_pack_count; i++) bo_run_forget_card(run, run->shop_packs[i].center);
     run->shop_count = 0;
     run->has_shop_voucher = 0;
     run->shop_pack_count = 0;
@@ -748,5 +748,5 @@ void bo_run_remove_joker(BORun *run, int index) {
     bo_joker_remove_from_deck(run, &run->jokers[index]);
     memmove(&run->jokers[index], &run->jokers[index + 1], sizeof(BOItem) * (run->joker_count - index - 1));
     run->joker_count--;
-    forget_card(run, removed.center);
+    bo_run_forget_card(run, removed.center);
 }

@@ -164,3 +164,25 @@ BO_TEST(test_profile_shop_has_no_locked_joker) {
     BO_EXPECT(jokers > 50);
     done(p, run);
 }
+
+BO_TEST(test_profile_play_and_round_count_the_stats) {
+    BOProfile *p = new_profile();
+    BORun *run = new_run(BO_B_RED, 1);
+    bo_run_select_blind(run);
+    BO_EQUAL_INT((int)p->high_scores[BO_HIGH_FURTHEST_ROUND], 1);
+    run->blind_chips = 1;
+    BOScore score;
+    BO_EXPECT(bo_run_play(run, 3, &score));
+    BO_EQUAL_INT((int)p->stats[BO_STAT_HANDS_PLAYED], 1);
+    BO_EQUAL_INT((int)p->stats[BO_STAT_CARDS_PLAYED], 2);
+    BO_EQUAL_INT(p->hand_usage[score.type], 1);
+    BO_EXPECT(p->high_scores[BO_HIGH_HAND] == score.total);
+    // The round is won with one hand: the streak of single hand rounds.
+    BO_EQUAL_INT(run->state, BO_STATE_ROUND_EVAL);
+    BO_EQUAL_INT((int)p->stats[BO_STAT_SINGLE_HAND_ROUND_STREAK], 1);
+    BO_EXPECT(p->blind_discovered[BO_BL_SMALL]);
+    bo_run_cash_out(run);
+    BO_EQUAL_INT((int)p->stats[BO_STAT_ROUNDS], 1);
+    BO_EXPECT(p->stats[BO_STAT_DOLLARS_EARNED] > 0);
+    done(p, run);
+}

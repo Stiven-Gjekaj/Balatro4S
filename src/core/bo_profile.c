@@ -300,6 +300,92 @@ void bo_profile_check(BORun *run, const BOUnlockArgs *args) {
     }
 }
 
+void bo_profile_check_cards(BORun *run) {
+    if (!gActive) return;
+    static const BOUnlockType checks[] = {BO_UNLOCK_MODIFY_DECK, BO_UNLOCK_MODIFY_JOKERS, BO_UNLOCK_HAVE_EDITION,
+                                          BO_UNLOCK_MIN_HAND_SIZE};
+    for (size_t i = 0; i < sizeof(checks) / sizeof(checks[0]); i++) {
+        BOUnlockArgs args = {.type = checks[i]};
+        bo_profile_check(run, &args);
+    }
+    const BOCard *cards[256];
+    int count = playing_cards(run, cards, 256);
+    for (int i = 0; i < count; i++) {
+        if (cards[i]->enhancement == BO_ENH_GOLD && cards[i]->seal == BO_SEAL_GOLD) {
+            BOUnlockArgs args = {.type = BO_UNLOCK_DOUBLE_GOLD};
+            bo_profile_check(run, &args);
+            break;
+        }
+    }
+    for (int i = 0; i < run->joker_count; i++) {
+        bo_profile_discover(run, run->jokers[i].center);
+        if (run->jokers[i].edition) bo_profile_discover(run, (BOCenterId)(BO_E_BASE + run->jokers[i].edition));
+    }
+    if (run->joker_count > run->max_jokers) run->max_jokers = run->joker_count;
+}
+
+void bo_profile_play(BORun *run, const BOCard *cards, int count, BOHandType hand, double chips) {
+    BOProfile *p = gActive;
+    if (!p) return;
+    bo_profile_stat(run, BO_STAT_CARDS_PLAYED, count);
+    bo_profile_stat(run, BO_STAT_HANDS_PLAYED, 1);
+    for (int i = 0; i < count; i++) {
+        if (bo_rules_is_face(run, &cards[i], 0)) bo_profile_stat(run, BO_STAT_FACE_CARDS_PLAYED, 1);
+    }
+    if (hand >= 0 && hand < BO_HAND_COUNT) p->hand_usage[hand]++;
+    BOUnlockArgs replays = {.type = BO_UNLOCK_RUN_CARD_REPLAYS};
+    bo_profile_check(run, &replays);
+    BOUnlockArgs contents = {.type = BO_UNLOCK_HAND_CONTENTS, .cards = cards, .card_count = count};
+    bo_profile_check(run, &contents);
+    BOUnlockArgs hearts = {.type = BO_UNLOCK_PLAY_ALL_HEARTS};
+    bo_profile_check(run, &hearts);
+    bo_profile_high_score(BO_HIGH_HAND, chips);
+    BOUnlockArgs score = {.type = BO_UNLOCK_CHIP_SCORE, .chips = chips};
+    bo_profile_check(run, &score);
+    bo_profile_check_cards(run);
+}
+
+void bo_profile_discard(BORun *run, const BOCard *cards, int count) {
+    if (!gActive) return;
+    bo_profile_stat(run, BO_STAT_CARDS_DISCARDED, count);
+    BOUnlockArgs args = {.type = BO_UNLOCK_DISCARD_CUSTOM, .cards = cards, .card_count = count};
+    bo_profile_check(run, &args);
+}
+
+void bo_profile_round_won(BORun *run, int interest_steps) {
+    BOProfile *p = gActive;
+    if (!p) return;
+    bo_profile_discover_blind(run, run->blind);
+    if (bo_blind_info(run->blind)->boss) {
+        run->current_boss_streak++;
+        bo_profile_high_score(BO_HIGH_BOSS_STREAK, run->current_boss_streak);
+    }
+    if (run->hands_played == 1) {
+        bo_profile_stat(run, BO_STAT_SINGLE_HAND_ROUND_STREAK, 1);
+    } else {
+        p->stats[BO_STAT_SINGLE_HAND_ROUND_STREAK] = 0;
+    }
+    BOUnlockArgs args = {.type = BO_UNLOCK_ROUND_WIN};
+    bo_profile_check(run, &args);
+    if (interest_steps >= 0) {
+        if (interest_steps == run->interest_cap / 5) {
+            p->stats[BO_STAT_ROUND_INTEREST_CAP_STREAK] += 1;
+        } else {
+            p->stats[BO_STAT_ROUND_INTEREST_CAP_STREAK] = 0;
+        }
+        BOUnlockArgs streak = {.type = BO_UNLOCK_INTEREST_STREAK};
+        bo_profile_check(run, &streak);
+    }
+}
+
+void bo_profile_dollars(BORun *run, int amount) {
+    if (!gActive) return;
+    if (amount > 0) bo_profile_stat(run, BO_STAT_DOLLARS_EARNED, amount);
+    bo_profile_high_score(BO_HIGH_MOST_MONEY, run->dollars);
+    BOUnlockArgs args = {.type = BO_UNLOCK_MONEY};
+    bo_profile_check(run, &args);
+}
+
 void bo_profile_stat(BORun *run, BOStat stat, double amount) {
     if (!gActive) return;
     gActive->stats[stat] += amount;

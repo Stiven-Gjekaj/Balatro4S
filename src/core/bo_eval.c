@@ -9,6 +9,7 @@
 
 #include "bo_boss.h"
 #include "bo_joker.h"
+#include "bo_profile.h"
 #include "bo_rules.h"
 #include "bo_run.h"
 
@@ -452,6 +453,7 @@ void bo_eval_play(BORun *run, BOScore *score) {
     run->dollar_buffer = 0;
     run->defer_dollars = 0;
     run->dollars += run->pending_dollars;
+    bo_profile_dollars(run, run->pending_dollars);
     run->pending_dollars = 0;
 }
 

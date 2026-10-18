@@ -11,6 +11,7 @@
 #include "bo_joker.h"
 #include "bo_pack.h"
 #include "bo_pool.h"
+#include "bo_profile.h"
 #include "bo_rules.h"
 #include "bo_tag.h"
 #include "bo_voucher.h"
@@ -51,6 +52,7 @@ void bo_run_ease_dollars(BORun *run, int amount) {
         run->pending_dollars += amount;
     } else {
         run->dollars += amount;
+        bo_profile_dollars(run, amount);
     }
 }
 
@@ -351,6 +353,9 @@ void bo_run_start_deck(BORun *run, const char *seed, BOCenterId back, int stake)
     run->slot = BO_SLOT_SMALL;
     run->state = BO_STATE_BLIND_SELECT;
     bo_tag_orbital_choices(run);
+    bo_profile_discover(run, run->blind_tags[0]);
+    bo_profile_discover(run, run->blind_tags[1]);
+    bo_profile_start_run(run);
 }
 
 BOBlindId bo_run_slot_blind(const BORun *run, BOBlindSlot slot) {
@@ -407,6 +412,9 @@ void bo_run_select_blind(BORun *run) {
     run->chips = 0;
     run->round++;
     run->state = BO_STATE_SELECTING;
+    bo_profile_high_score(BO_HIGH_FURTHEST_ROUND, run->round);
+    bo_profile_high_score(BO_HIGH_FURTHEST_ANTE, run->ante);
+    if (run->slot != BO_SLOT_BOSS) run->current_boss_streak = 0;
     bo_boss_set_blind(run);
     for (int i = 0; i < run->joker_count; i++) {
         BOContext ctx = context_for(BO_CTX_SETTING_BLIND);
@@ -424,6 +432,7 @@ void bo_run_select_blind(BORun *run) {
         bo_joker_calculate(run, &run->jokers[i], &ctx);
     }
     bo_boss_drawn_to_hand(run);
+    bo_profile_check_cards(run);
 }
 
 // Moves the cards of the hand that mask selects to out, in hand order.
@@ -473,13 +482,18 @@ void bo_run_end_round(BORun *run) {
         }
     }
     const BOBlindInfo *blind = bo_blind_info(run->blind);
-    if (run->ante == run->win_ante && blind->boss) run->won = 1;
     if (game_over) {
         bo_run_remove_marked_jokers(run);
         for (int i = 0; i < run->hand_count; i++) run->discard[run->discard_count++] = run->hand[i];
         run->hand_count = 0;
         run->state = BO_STATE_GAME_OVER;
+        bo_profile_lose(run);
         return;
+    }
+    // win_game comes before the money of the round.
+    if (run->ante == run->win_ante && blind->boss && !run->won) {
+        run->won = 1;
+        bo_profile_win(run);
     }
     run->unused_discards += run->discards_left;
     if (blind->boss) {
@@ -554,7 +568,12 @@ void bo_run_end_round(BORun *run) {
     // The hand and the discard pile go back to the deck.
     for (int i = 0; i < run->hand_count; i++) run->discard[run->discard_count++] = run->hand[i];
     run->hand_count = 0;
-    if (blind->boss) run->ante++;
+    if (blind->boss) {
+        run->ante++;
+        bo_profile_high_score(BO_HIGH_FURTHEST_ANTE, run->ante);
+        BOUnlockArgs ante = {.type = BO_UNLOCK_ANTE_UP, .ante = run->ante};
+        bo_profile_check(run, &ante);
+    }
     for (int i = 0; i < run->discard_count; i++) run->deck[run->deck_count++] = run->discard[i];
     run->discard_count = 0;
     if (blind->boss) {
@@ -589,11 +608,14 @@ void bo_run_end_round(BORun *run) {
     int tagDollars[BO_MAX_TAGS], tagPlaces[BO_MAX_TAGS];
     int tagRows = bo_tag_eval(run, tagDollars, tagPlaces, BO_MAX_TAGS);
     for (int i = 0; i < tagRows; i++) add_eval_row(run, BO_EVAL_TAG, tagPlaces[i], 0, tagDollars[i]);
+    int interestSteps = -1;
     if (run->dollars >= 5 && !run->no_interest) {
         int steps = run->dollars / 5;
         if (steps > run->interest_cap / 5) steps = run->interest_cap / 5;
         add_eval_row(run, BO_EVAL_INTEREST, 0, steps, run->interest_amount * steps);
+        interestSteps = steps;
     }
+    bo_profile_round_won(run, interestSteps);
     // evaluate_round defeats the blind in an event, after the money of the
     // held cards and of the jokers.
     bo_boss_defeat(run);
@@ -614,8 +636,10 @@ int bo_run_play(BORun *run, uint64_t mask, BOScore *score) {
         run->play[i].forced_selection = 0;
     }
     for (int i = 0; i < run->hand_count; i++) run->hand[i].forced_selection = 0;
+    for (int i = 0; i < run->play_count; i++) run->play[i].times_played++;
     bo_boss_press_play(run);
     bo_eval_play(run, score);
+    bo_profile_play(run, run->play, run->play_count, score->type, score->total);
     // draw_from_play_to_discard: the destroyed cards leave the game.
     for (int i = 0; i < run->play_count; i++) {
         BOCard *card = &run->play[i];
@@ -646,6 +670,7 @@ void bo_run_discard_cards(BORun *run, uint64_t mask, int hook) {
         if (i < run->hand_count) run->hand[i].forced_selection = 0;
     }
     take_from_hand(run, mask, cards);
+    if (!hook) bo_profile_discard(run, cards, count);
     BOHandRules rules = bo_eval_rules(run);
     BOHandResult result = bo_hand_evaluate(cards, count, &rules);
     for (int j = 0; j < run->joker_count; j++) {
@@ -727,12 +752,16 @@ void bo_run_cash_out(BORun *run) {
     run->hands_left = run->hands_per_round + run->round_bonus_hands;
     if (run->hands_left < 1) run->hands_left = 1;
     run->dollars += run->eval.total;
+    bo_profile_dollars(run, run->eval.total);
+    bo_profile_stat(run, BO_STAT_ROUNDS, 1);
     run->chips = 0;
     run->shop_free = 0;
     run->shop_d6ed = 0;
     if (run->slot == BO_SLOT_BOSS) {
         run->blind_tags[0] = bo_pool_next_tag(run, NULL);
         run->blind_tags[1] = bo_pool_next_tag(run, NULL);
+        bo_profile_discover(run, run->blind_tags[0]);
+        bo_profile_discover(run, run->blind_tags[1]);
         run->slot = BO_SLOT_SMALL;
         run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, NULL);
         run->boss_rerolled = 0;
@@ -787,6 +816,8 @@ int bo_run_reroll(BORun *run) {
     if (run->state != BO_STATE_SHOP) return 0;
     if (run->reroll_cost > bo_run_spendable(run) && run->reroll_cost > 0) return 0;
     if (run->reroll_cost > 0) bo_run_ease_dollars(run, -run->reroll_cost);
+    bo_profile_stat(run, BO_STAT_SHOP_DOLLARS_SPENT, run->reroll_cost);
+    bo_profile_stat(run, BO_STAT_SHOP_REROLLS, 1);
     int finalFree = run->free_rerolls > 0;
     run->free_rerolls = run->free_rerolls - 1 < 0 ? 0 : run->free_rerolls - 1;
     bo_rules_calculate_reroll_cost(run, finalFree);
@@ -833,6 +864,11 @@ int bo_run_buy(BORun *run, int index) {
         bo_joker_calculate(run, &run->jokers[i], &ctx);
     }
     if (item.cost != 0) bo_run_ease_dollars(run, -item.cost);
+    bo_profile_stat(run, BO_STAT_SHOP_DOLLARS_SPENT, item.cost);
+    if (bought.is_playing_card) bo_profile_stat(run, BO_STAT_PLAYING_CARDS_BOUGHT, 1);
+    else if (c->set == BO_SET_PLANET) bo_profile_stat(run, BO_STAT_PLANETS_BOUGHT, 1);
+    else if (c->set == BO_SET_TAROT) bo_profile_stat(run, BO_STAT_TAROTS_BOUGHT, 1);
+    bo_profile_check_cards(run);
     return 1;
 }
 
@@ -859,6 +895,8 @@ static int sell_item(BORun *run, BOItem *items, int *count, int index) {
         bo_joker_calculate(run, &run->jokers[i], &ctx);
     }
     bo_run_ease_dollars(run, sell);
+    bo_profile_stat(run, BO_STAT_CARDS_SOLD, 1);
+    if (isJoker && bo_center(sold.center)->set == BO_SET_JOKER) bo_profile_stat(run, BO_STAT_JOKERS_SOLD, 1);
     bo_run_remove_marked_jokers(run);
     // Verdant Leaf ends when a joker is sold.
     if (isJoker && run->blind_active && run->blind == BO_BL_FINAL_LEAF) bo_boss_disable(run);
@@ -894,6 +932,7 @@ int bo_run_open_pack(BORun *run, int index) {
             sizeof(BOItem) * (run->shop_pack_count - index - 1));
     run->shop_pack_count--;
     bo_run_forget_card(run, pack.center);
+    bo_profile_discover(run, pack.center);
     return bo_pack_open(run, pack.center, pack.cost);
 }
 
@@ -916,6 +955,8 @@ int bo_run_use_consumable(BORun *run, int index, uint64_t highlighted) {
     bo_joker_remove_from_deck(run, &item);
     bo_run_forget_card(run, item.center);
     bo_run_remove_marked_jokers(run);
+    bo_profile_discover(run, item.center);
+    bo_profile_check_cards(run);
     return 1;
 }
 
@@ -956,6 +997,7 @@ void bo_run_add_joker(BORun *run, const BOItem *item) {
     bo_joker_add_to_deck(run, slot);
     run->used_jokers[slot->center] = 1;
     bo_rules_set_cost(run, slot);
+    bo_profile_check_cards(run);
 }
 
 void bo_run_add_consumable(BORun *run, const BOItem *item) {
@@ -966,6 +1008,7 @@ void bo_run_add_consumable(BORun *run, const BOItem *item) {
     bo_joker_add_to_deck(run, slot);
     run->used_jokers[slot->center] = 1;
     bo_rules_set_cost(run, slot);
+    bo_profile_discover(run, slot->center);
 }
 
 void bo_run_remove_joker(BORun *run, int index) {

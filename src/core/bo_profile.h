@@ -138,6 +138,25 @@ typedef struct {
 // check_for_unlock: unlocks each locked card whose condition is true now.
 void bo_profile_check(BORun *run, const BOUnlockArgs *args);
 
+// The checks of the cards of the run, after a change to the cards: the
+// deck (modify_deck), a Gold Card with a Gold Seal (double_gold), the
+// jokers (modify_jokers and have_edition), and the hand size.
+void bo_profile_check_cards(BORun *run);
+
+// The checks and the stats of a play: the cards, the hand, and the score.
+void bo_profile_play(BORun *run, const BOCard *cards, int count, BOHandType hand, double chips);
+
+// The checks and the stats of a discard.
+void bo_profile_discard(BORun *run, const BOCard *cards, int count);
+
+// The end of a round that the player won: the blind, the streaks, and
+// round_win. interest_steps is the interest of evaluate_round, or -1.
+void bo_profile_round_won(BORun *run, int interest_steps);
+
+// ease_dollars: the dollars earned, the high score, and the check of the
+// money.
+void bo_profile_dollars(BORun *run, int amount);
+
 // inc_career_stat, with the check of the career stat.
 void bo_profile_stat(BORun *run, BOStat stat, double amount);
 

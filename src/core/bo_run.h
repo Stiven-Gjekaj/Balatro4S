@@ -87,6 +87,7 @@ typedef struct BORun {
     BOCenterId back;       // The deck, as BO_B_RED.
     double ante_scaling;   // starting_params.ante_scaling: 2 for the Plasma Deck.
     int max_jokers;        // The most jokers at one time in this run.
+    int current_boss_streak;  // The bosses in a row, for the high score.
     int no_interest;       // modifiers.no_interest: the Green Deck.
     int money_per_hand;    // modifiers.money_per_hand or 1.
     int money_per_discard; // modifiers.money_per_discard or 0.

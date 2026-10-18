@@ -1,3 +1,4 @@
+#include "bo_profile.h"
 #include "bo_voucher.h"
 
 #include <string.h>
@@ -90,6 +91,16 @@ static void redeem_item(BORun *run, BOItem voucher) {
     run->used_vouchers[voucher.center] = 1;
     bo_run_ease_dollars(run, -voucher.cost);
     bo_voucher_apply(run, voucher.center);
+    bo_profile_discover(run, voucher.center);
+    bo_profile_stat(run, BO_STAT_SHOP_DOLLARS_SPENT, voucher.cost);
+    bo_profile_stat(run, BO_STAT_VOUCHERS_BOUGHT, 1);
+    BOUnlockArgs redeemed = {.type = BO_UNLOCK_RUN_REDEEM};
+    bo_profile_check(run, &redeemed);
+    if (voucher.center == BO_V_BLANK && bo_profile_active()) {
+        bo_profile_active()->blank_redeems++;
+        BOUnlockArgs blank = {.type = BO_UNLOCK_BLANK_REDEEMS};
+        bo_profile_check(run, &blank);
+    }
     for (int i = 0; i < run->joker_count; i++) {
         BOContext ctx;
         memset(&ctx, 0, sizeof(ctx));

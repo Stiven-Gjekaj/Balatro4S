@@ -1,3 +1,4 @@
+#include "bo_profile.h"
 #include "bo_pack.h"
 
 #include <stdio.h>
@@ -194,7 +195,13 @@ int bo_pack_choose(BORun *run, int index, uint64_t highlighted) {
         bo_consume_use(run, &chosen.item, highlighted);
         bo_run_forget_card(run, chosen.item.center);
         bo_run_remove_marked_jokers(run);
+        bo_profile_discover(run, chosen.item.center);
+        // A card that a Tarot or a Planet pack uses.
+        const char *kind = bo_center(run->pack)->kind;
+        if (kind && strcmp(kind, "Arcana") == 0) bo_profile_stat(run, BO_STAT_TAROT_READING_USED, 1);
+        if (kind && strcmp(kind, "Celestial") == 0) bo_profile_stat(run, BO_STAT_PLANETARIUM_USED, 1);
     }
+    bo_profile_check_cards(run);
     if (run->pack_choices > 1) {
         run->pack_choices--;
     } else {

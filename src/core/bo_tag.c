@@ -1,3 +1,4 @@
+#include "bo_profile.h"
 #include "bo_tag.h"
 
 #include <stdio.h>
@@ -75,6 +76,7 @@ void bo_tag_add(BORun *run, BOCenterId center, int blind_type) {
     add_one(run, center, orbital);
     for (int i = 0; i < copies; i++) add_one(run, center, orbital);
     remove_triggered(run);
+    bo_profile_discover(run, center);
 }
 
 void bo_tag_immediate(BORun *run) {

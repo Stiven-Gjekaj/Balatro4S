@@ -12,6 +12,7 @@
 #include "bo_pool.h"
 #include "bo_joker.h"
 #include "bo_pack.h"
+#include "bo_tag.h"
 #include "bo_voucher.h"
 #include "bo_rules.h"
 #include "bo_run.h"
@@ -289,6 +290,50 @@ static void redeem(BORun *run, BOCenterId center) {
     printf("\n");
 }
 
+// Skips a Small Blind for each tag, then opens a shop, and prints it.
+static void skip_for_tags(BORun *run, const BOCenterId *tags, int count) {
+    run->state = BO_STATE_BLIND_SELECT;
+    for (int t = 0; t < count; t++) {
+        run->skips++;
+        bo_tag_add(run, tags[t], BO_TAG_FROM_SMALL);
+        for (int i = 0; i < run->joker_count; i++) {
+            BOContext ctx;
+            memset(&ctx, 0, sizeof(ctx));
+            ctx.kind = BO_CTX_SKIP_BLIND;
+            bo_joker_calculate(run, &run->jokers[i], &ctx);
+        }
+        bo_tag_immediate(run);
+    }
+    run->state = BO_STATE_SHOP;
+    run->voucher = BO_CENTER_NONE;
+    bo_run_fill_shop(run);
+    printf("dollars %d\n", run->dollars);
+    printf("skips %d\n", run->skips);
+    printf("jokers");
+    for (int i = 0; i < run->joker_count; i++) {
+        printf(" %s%s%s", bo_center(run->jokers[i].center)->key, run->jokers[i].edition ? ":" : "",
+               edition_name(run->jokers[i].edition));
+    }
+    printf("\n");
+    printf("tags");
+    for (int i = 0; i < run->tag_count; i++) printf(" %s", bo_center(run->tags[i].center)->key);
+    printf("\n");
+    printf("shop");
+    for (int i = 0; i < run->shop_count; i++) {
+        printf(" %s%s%s:%d", bo_center(run->shop[i].item.center)->key, run->shop[i].item.edition ? ":" : "",
+               edition_name(run->shop[i].item.edition), run->shop[i].item.cost);
+    }
+    printf("\n");
+    printf("vouchers");
+    for (int i = 0; i < run->tag_voucher_count; i++) printf(" %s", bo_center(run->tag_vouchers[i].center)->key);
+    printf("\n");
+    printf("packs");
+    for (int i = 0; i < run->shop_pack_count; i++) printf(" %d", run->shop_packs[i].cost);
+    printf("\n");
+    printf("reroll %d\n", run->reroll_cost);
+    print_levels(run);
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: scenario FILE\n");
@@ -324,6 +369,8 @@ int main(int argc, char **argv) {
     BOCenterId useCenter = BO_CENTER_NONE, packCenter = BO_CENTER_NONE, redeemCenter = BO_CENTER_NONE;
     PackStep steps[MAX_STEPS];
     int blindId = -1;
+    BOCenterId tags[8];
+    int tagCount = 0;
     int stepCount = 0;
     uint64_t useMask = 0;
     rewind(file);
@@ -391,6 +438,8 @@ int main(int argc, char **argv) {
             for (char *c = name; *c; c++) if (*c == '_') *c = ' ';
             int type = bo_rules_hand_by_name(name);
             if (type >= 0) run->most_played_hand = (BOHandType)type;
+        } else if (strcmp(key, "tag") == 0 && tagCount < 8) {
+            tags[tagCount++] = bo_center_by_key(words[1]);
         } else if (strcmp(key, "redeem") == 0) {
             redeemCenter = bo_center_by_key(words[1]);
         } else if (strcmp(key, "open") == 0) {
@@ -413,6 +462,10 @@ int main(int argc, char **argv) {
         }
     }
     fclose(file);
+    if (tagCount > 0) {
+        skip_for_tags(run, tags, tagCount);
+        return 0;
+    }
     if (redeemCenter != BO_CENTER_NONE) {
         redeem(run, redeemCenter);
         return 0;

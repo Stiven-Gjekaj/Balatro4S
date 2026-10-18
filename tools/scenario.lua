@@ -32,6 +32,8 @@
 --   redeem v_key          (buy a voucher in the shop, in place of a play)
 --   blind bl_key          (the blind of the round, before the play)
 --   most_played Pair      (current_round.most_played_poker_hand, for The Ox)
+--   tag tag_key           (skip a Small Blind for this tag; more lines skip
+--                          more blinds, then a shop opens, in place of a play)
 -- A card is a key of P_CARDS, then an enhancement, an edition, and a seal.
 
 local dir, file = arg[1], arg[3]
@@ -106,7 +108,7 @@ local function set_ability(card, words)
     end
 end
 
-local plays, holds, use, pack, redeem, blind = {}, {}, nil, nil, nil, nil
+local plays, holds, use, pack, redeem, blind, tags = {}, {}, nil, nil, nil, nil, {}
 for _, w in ipairs(lines) do
     local key = w[1]
     if key == 'ante' then G.GAME.round_resets.ante = tonumber(w[2])
@@ -147,6 +149,7 @@ for _, w in ipairs(lines) do
     elseif key == 'open' then pack = {key = w[2], steps = {}}
     elseif key == 'redeem' then redeem = w[2]
     elseif key == 'blind' then blind = w[2]
+    elseif key == 'tag' then tags[#tags + 1] = w[2]
     elseif key == 'most_played' then
         G.GAME.current_round.most_played_poker_hand = w[2]:gsub('_', ' ')
     elseif key == 'choose' or key == 'skip' then
@@ -224,6 +227,72 @@ local function headless_use()
     G.STAGE = G.STAGES.RUN
     Card.update_alert = function() end
     get_joker_win_sticker = function() return nil end
+end
+
+if #tags > 0 then
+    -- G.FUNCS.skip_blind for each tag, then a new shop, with no screen.
+    headless_use()
+    G.SPEEDFACTOR = 1
+    G.STATE = G.STATES.BLIND_SELECT
+    G.HUD_tags = {}
+    local any = setmetatable({}, {__index = function(t) return t end, __call = function(t) return t end})
+    local function add_tag_headless(t)
+        for i = 1, #G.GAME.tags do G.GAME.tags[i]:apply_to_run({type = 'tag_add', tag = t}) end
+        G.GAME.tags[#G.GAME.tags + 1] = t
+        t.HUD_tag = any
+    end
+    add_tag = add_tag_headless
+    for _, key in ipairs(tags) do
+        G.GAME.skips = (G.GAME.skips or 0) + 1
+        add_tag(Tag(key, nil, 'Small'))
+        B.manager:run_all()
+        for i = 1, #G.jokers.cards do G.jokers.cards[i]:calculate_joker({skip_blind = true}) end
+        for i = 1, #G.GAME.tags do G.GAME.tags[i]:apply_to_run({type = 'immediate'}) end
+        B.manager:run_all()
+    end
+    -- The shop, in the order of Game:update_shop.
+    G.STATE = G.STATES.SHOP
+    G.GAME.shop = {joker_max = 2}
+    G.shop = any
+    G.shop_jokers = CardArea(0, 0, 1, 1, {card_limit = 2, type = 'shop'})
+    G.shop_vouchers = CardArea(0, 0, 1, 1, {card_limit = 1, type = 'shop'})
+    G.shop_booster = CardArea(0, 0, 1, 1, {card_limit = 2, type = 'shop'})
+    create_shop_card_ui = function() end
+    for i = 1, #G.GAME.tags do G.GAME.tags[i]:apply_to_run({type = 'shop_start'}) end
+    B.manager:run_all()
+    for i = 1, 2 do G.shop_jokers:emplace(create_card_for_shop(G.shop_jokers)) end
+    B.manager:run_all()
+    for i = 1, 2 do
+        local card = Card(0, 0, 1, 1, G.P_CARDS.empty, G.P_CENTERS[get_pack('shop_pack').key])
+        G.shop_booster:emplace(card)
+    end
+    for i = 1, #G.GAME.tags do G.GAME.tags[i]:apply_to_run({type = 'voucher_add'}) end
+    for i = 1, #G.GAME.tags do G.GAME.tags[i]:apply_to_run({type = 'shop_final_pass'}) end
+    B.manager:run_all()
+    print('dollars ' .. G.GAME.dollars)
+    print('skips ' .. G.GAME.skips)
+    local jokers = {}
+    for _, j in ipairs(G.jokers.cards) do
+        jokers[#jokers + 1] = ' ' .. j.config.center.key .. (j.edition and (':' .. j.edition.type) or '')
+    end
+    print('jokers' .. table.concat(jokers))
+    local left = {}
+    for _, t in ipairs(G.GAME.tags) do left[#left + 1] = ' ' .. t.key end
+    print('tags' .. table.concat(left))
+    local shop = {}
+    for _, c in ipairs(G.shop_jokers.cards) do
+        shop[#shop + 1] = ' ' .. c.config.center.key .. (c.edition and (':' .. c.edition.type) or '') .. ':' .. c.cost
+    end
+    print('shop' .. table.concat(shop))
+    local vouchers = {}
+    for _, c in ipairs(G.shop_vouchers.cards) do vouchers[#vouchers + 1] = ' ' .. c.config.center.key end
+    print('vouchers' .. table.concat(vouchers))
+    local packs = {}
+    for _, c in ipairs(G.shop_booster.cards) do packs[#packs + 1] = ' ' .. c.cost end
+    print('packs' .. table.concat(packs))
+    print('reroll ' .. G.GAME.current_round.reroll_cost)
+    print_levels()
+    os.exit(0)
 end
 
 if redeem then

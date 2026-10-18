@@ -3,11 +3,12 @@
 (tools/oracle.sh score) and with Balatro4S (build/fuzz/scenario), and
 prints each scenario where the results are not the same.
 
-Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--pack] [--voucher] [--blind] [--keep]
+Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--pack] [--voucher] [--blind] [--tag] [--keep]
 With --use, each scenario uses a Tarot, Planet, or Spectral card on the hand
 in place of a play. With --pack, each scenario opens a booster pack in the
 shop and takes some of its cards. With --voucher, each scenario buys a
-voucher in the shop. With --blind, each play has a random blind.
+voucher in the shop. With --blind, each play has a random blind. With --tag,
+each scenario skips blinds for random tags, then opens a shop.
 """
 
 import os
@@ -165,6 +166,33 @@ def voucher_scenario(rng, jokers, vouchers):
     return "\n".join(lines) + "\n"
 
 
+# The tags that open a pack or reroll the boss use the screen of Balatro.
+# The pack tests cover their packs. The hand of the Orbital Tag comes from
+# pairs() over strings, which LuaJIT orders in another way in each process.
+TAG_SKIP = {"tag_charm", "tag_meteor", "tag_ethereal", "tag_standard", "tag_buffoon", "tag_boss", "tag_orbital"}
+
+
+def all_tags():
+    keys = []
+    with open(os.path.join(ROOT, "src", "core", "bo_data.c")) as f:
+        for line in f:
+            m = re.match(r'\s*\{"(tag_[a-z0-9_]+)"', line)
+            if m and m.group(1) not in TAG_SKIP:
+                keys.append(m.group(1))
+    return keys
+
+
+def tag_scenario(rng, jokers, tags):
+    lines = ["seed " + "".join(rng.choice("ABCDEFGHJKLMNPQRSTUVWXYZ123456789") for _ in range(8))]
+    lines.append("ante %d" % rng.randint(1, 8))
+    lines.append("dollars %d" % rng.randint(-5, 60))
+    for key in rng.sample(jokers, rng.randint(0, 4)):
+        lines.append("joker " + key)
+    for _ in range(rng.randint(1, 4)):
+        lines.append("tag " + rng.choice(tags))
+    return "\n".join(lines) + "\n"
+
+
 def card(rng, plain=False):
     token = rng.choice(SUITS) + "_" + rng.choice(RANKS)
     if plain:
@@ -250,7 +278,9 @@ def main():
                     if f.endswith(".c")] + ["-lz", "-o", os.path.join(OUT, "scenario")], check=True)
     failures = 0
     for i in range(count):
-        if "--voucher" in sys.argv:
+        if "--tag" in sys.argv:
+            text = tag_scenario(rng, jokers, all_tags())
+        elif "--voucher" in sys.argv:
             text = voucher_scenario(rng, jokers, all_vouchers())
         elif "--pack" in sys.argv:
             text = pack_scenario(rng, jokers, consumables, packs)

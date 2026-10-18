@@ -1863,6 +1863,15 @@ void bo_game_debug(const char *line) {
             }
         }
         fprintf(stderr, "debug: joker %s\n", word);
+    } else if (sscanf(line, "edition %63s", word) == 1) {
+        // The edition of the last joker.
+        static const char *names[] = {"none", "foil", "holo", "polychrome", "negative"};
+        for (int e = 0; e < 5; e++) {
+            if (strcmp(word, names[e]) == 0 && G.run->joker_count > 0) {
+                G.run->jokers[G.run->joker_count - 1].edition = (uint8_t)e;
+            }
+        }
+        fprintf(stderr, "debug: edition %s\n", word);
     } else if (sscanf(line, "boss %63s", word) == 1) {
         // The boss comes next.
         for (int b = 0; b < BO_BLIND_COUNT; b++) {

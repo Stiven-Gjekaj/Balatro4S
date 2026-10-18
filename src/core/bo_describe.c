@@ -417,6 +417,14 @@ int bo_describe_item(const BORun *run, const BOItem *item, BODescription *out) {
         if (!line || line->type != BO_LUA_STRING) continue;
         fill_line(line->string, &vars, out->lines[out->line_count++], BO_DESCRIBE_LINE_LENGTH);
     }
+    if (item->center == BO_C_FOOL && out->line_count < BO_DESCRIBE_LINES) {
+        // main_end of The Fool: the last Tarot or Planet card in a box, green,
+        // or red when there is none or it is The Fool.
+        BOCenterId last = run ? run->last_tarot_planet : BO_CENTER_NONE;
+        int none = last == BO_CENTER_NONE || last == BO_C_FOOL;
+        snprintf(out->lines[out->line_count++], BO_DESCRIBE_LINE_LENGTH, "{X:%s,C:white}%s{}", none ? "red" : "green",
+                 last != BO_CENTER_NONE ? center_name(last) : bo_describe_word("k_none"));
+    }
     return 1;
 }
 

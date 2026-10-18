@@ -221,3 +221,27 @@ BO_TEST(test_describe_removes_the_spaces_in_a_box) {
     bo_luatab_free(text);
     free(run);
 }
+
+BO_TEST(test_describe_adds_the_last_card_of_the_fool) {
+    BOLuaValue *text = bo_luatab_parse(
+        "return { descriptions = { Tarot = {\n"
+        "  c_fool = { name = 'The Fool', text = { 'Creates the last' } },\n"
+        "  c_moon = { name = 'The Moon', text = { 'x' } },\n"
+        "} },\n"
+        "misc = { dictionary = { k_none = 'None' } } }");
+    bo_describe_set_text(text);
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    BOItem fool = bo_pool_make_item(run, BO_C_FOOL);
+    BODescription d;
+    run->last_tarot_planet = BO_CENTER_NONE;
+    BO_EXPECT(bo_describe_item(run, &fool, &d));
+    BO_EQUAL_INT(d.line_count, 2);
+    BO_EQUAL(@(d.lines[1]), @"{X:red,C:white}None{}");
+    run->last_tarot_planet = BO_C_MOON;
+    bo_describe_item(run, &fool, &d);
+    BO_EQUAL(@(d.lines[1]), @"{X:green,C:white}The Moon{}");
+    bo_describe_set_text(NULL);
+    bo_luatab_free(text);
+    free(run);
+}

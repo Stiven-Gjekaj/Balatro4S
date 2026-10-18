@@ -128,6 +128,11 @@ int bo_gfx_init(void) {
 }
 
 static void refresh_effects(void);
+static void render_background(void);
+static void push(GLuint texture, float u0, float v0, float u1, float v1,
+                 float x, float y, float w, float h, float angle, BOColor tint);
+static int gBackReady;
+static GLuint gBackTexture;
 
 void bo_gfx_begin(int width, int height, BOColor clear) {
     gLastDrawCalls = gDrawCalls;
@@ -135,11 +140,20 @@ void bo_gfx_begin(int width, int height, BOColor clear) {
     gScreenW = (float)width;
     gScreenH = (float)height;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &gMainFramebuffer);
+    // The passes into other framebuffers come before the clear. A change of
+    // framebuffer after the clear makes the GPU store and load the screen.
     refresh_effects();
+    render_background();
     glViewport(0, 0, width, height);
     glUniform2f(gScreenUniform, (float)width, (float)height);
     glClearColor(clear.r, clear.g, clear.b, clear.a);
     glClear(GL_COLOR_BUFFER_BIT);
+    if (gBackReady) {
+        // The small texture over the whole screen. Its rows are upside down.
+        BOColor white = {1, 1, 1, 1};
+        push(gBackTexture, 0, 1, 1, 0, 0, 0, gScreenW, gScreenH, 0, white);
+        gBackReady = 0;
+    }
 }
 
 void bo_gfx_flush(void) {
@@ -251,6 +265,8 @@ BOColor bo_rgba(unsigned int hex, float alpha) {
 typedef struct {
     GLuint program;
     GLint screen, value, time, dissolve, textureDetails, imageDetails, shadow, burn1, burn2;
+    // The background.
+    GLint spinTime, colour1, colour2, colour3, contrast, spinAmount, screenSize;
 } BOEffectProgram;
 
 static BOEffectProgram gEffects[BO_FX_COUNT];
@@ -265,6 +281,7 @@ static const char *kEffectHeader =
     "varying mediump vec2 v_texcoord;\n"
     "varying lowp vec4 v_color;\n"
     "uniform sampler2D bo_texture;\n"
+    "uniform vec4 love_ScreenSize;\n"
     "vec4 bo_texel(sampler2D s, vec2 uv) {\n"
     "    vec4 c = texture2D(s, uv);\n"
     "    return c.a > 0.0 ? vec4(c.rgb / c.a, c.a) : vec4(0.0);\n"
@@ -314,6 +331,13 @@ int bo_gfx_load_effect(BOShaderEffect effect, const char *name, const char *sour
     e->shadow = glGetUniformLocation(program, "shadow");
     e->burn1 = glGetUniformLocation(program, "burn_colour_1");
     e->burn2 = glGetUniformLocation(program, "burn_colour_2");
+    e->spinTime = glGetUniformLocation(program, "spin_time");
+    e->colour1 = glGetUniformLocation(program, "colour_1");
+    e->colour2 = glGetUniformLocation(program, "colour_2");
+    e->colour3 = glGetUniformLocation(program, "colour_3");
+    e->contrast = glGetUniformLocation(program, "contrast");
+    e->spinAmount = glGetUniformLocation(program, "spin_amount");
+    e->screenSize = glGetUniformLocation(program, "love_ScreenSize");
     glUseProgram(gProgram);
     return 1;
 }
@@ -512,4 +536,63 @@ void bo_gfx_effect_sprite(BOShaderEffect effect, const BOTexture *texture, int c
     float v0 = 1 - (sy + 1) / CACHE_SIZE, v1 = 1 - (sy + 1 + e->renderH) / CACHE_SIZE;
     BOColor white = {1, 1, 1, 1};
     push(gCacheTexture, u0, v0, u1, v1, x, y, w, h, 0, white);
+}
+
+// --- The background -----------------------------------------------------------
+
+enum { BACK_W = 120, BACK_H = 80 };
+
+static GLuint gBackFramebuffer;
+static struct {
+    int set;
+    float time, spinTime, contrast, spinAmount;
+    BOColor colour1, colour2, colour3;
+} gBack;
+
+void bo_gfx_set_background(float time, float spin_time, BOColor colour1, BOColor colour2, BOColor colour3,
+                           float contrast, float spin_amount) {
+    gBack.set = 1;
+    gBack.time = time;
+    gBack.spinTime = spin_time;
+    gBack.colour1 = colour1;
+    gBack.colour2 = colour2;
+    gBack.colour3 = colour3;
+    gBack.contrast = contrast;
+    gBack.spinAmount = spin_amount;
+}
+
+// The shader runs on each pixel of the small texture.
+static void render_background(void) {
+    BOEffectProgram *p = &gEffects[BO_FX_BACKGROUND];
+    if (!gBack.set || !p->program) return;
+    gBack.set = 0;
+    if (!gBackFramebuffer) {
+        unsigned char *empty = calloc(BACK_W * BACK_H, 4);
+        if (!empty) return;
+        BOTexture t = bo_gfx_texture(empty, BACK_W, BACK_H);
+        free(empty);
+        gBackTexture = t.id;
+        glGenFramebuffers(1, &gBackFramebuffer);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, gBackFramebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gBackTexture, 0);
+    glViewport(0, 0, BACK_W, BACK_H);
+    glDisable(GL_BLEND);
+    glUseProgram(p->program);
+    glUniform2f(p->screen, BACK_W, BACK_H);
+    glUniform4f(p->screenSize, BACK_W, BACK_H, 1, 1);
+    glUniform1f(p->time, gBack.time);
+    glUniform1f(p->spinTime, gBack.spinTime);
+    glUniform4f(p->colour1, gBack.colour1.r, gBack.colour1.g, gBack.colour1.b, gBack.colour1.a);
+    glUniform4f(p->colour2, gBack.colour2.r, gBack.colour2.g, gBack.colour2.b, gBack.colour2.a);
+    glUniform4f(p->colour3, gBack.colour3.r, gBack.colour3.g, gBack.colour3.b, gBack.colour3.a);
+    glUniform1f(p->contrast, gBack.contrast);
+    glUniform1f(p->spinAmount, gBack.spinAmount);
+    BOColor white = {1, 1, 1, 1};
+    push(gCircle.id, 0.5f, 0.5f, 0.5f, 0.5f, 0, 0, BACK_W, BACK_H, 0, white);
+    bo_gfx_flush();
+    glEnable(GL_BLEND);
+    glUseProgram(gProgram);
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)gMainFramebuffer);
+    gBackReady = 1;
 }

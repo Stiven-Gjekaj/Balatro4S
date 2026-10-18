@@ -53,6 +53,7 @@ typedef enum {
     BO_FX_NEGATIVE_SHINE,
     BO_FX_VOUCHER,
     BO_FX_BOOSTER,
+    BO_FX_BACKGROUND,
     BO_FX_COUNT,
 } BOShaderEffect;
 
@@ -68,6 +69,12 @@ int bo_gfx_load_effect(BOShaderEffect effect, const char *name, const char *sour
 // texture, and bo_gfx_begin draws one card of the cache again each frame.
 void bo_gfx_effect_sprite(BOShaderEffect effect, const BOTexture *texture, int columns, int rows, int col, int row,
                           float x, float y, float w, float h, float value1, float value2, float time);
+
+// The moving background of Balatro (BO_FX_BACKGROUND), at a low
+// resolution, over the whole screen. Call it before bo_gfx_begin, which
+// draws it first.
+void bo_gfx_set_background(float time, float spin_time, BOColor colour1, BOColor colour2, BOColor colour3,
+                           float contrast, float spin_amount);
 
 BOColor bo_rgb(unsigned int hex);
 BOColor bo_rgba(unsigned int hex, float alpha);

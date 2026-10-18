@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 (2026-10-18)
+
+- The 28 boss blinds and the 5 final boss blinds act as in Balatro. The
+  blind select and the round show the text of the boss.
+- Buy the 32 vouchers in the shop. Director's Cut and Retcon add a Reroll
+  Boss button to the blind select.
+- Skip the Small Blind or the Big Blind for its tag. The 24 tags act as in
+  Balatro: free jokers, free packs, editions, money, hand levels, and more.
+  Tap a tag to see its text.
+- Tests compare 1000 plays with random blinds, 500 vouchers, and 1000 skips
+  with random tags with the code of Balatro, and all of them agree.
+- Fix: a debuffed or perished joker leaves the deck, as in Balatro, so its
+  effects stop.
+- Fix: the discards left never go below 0 when a joker leaves.
+
 ## 0.4.0 (2026-10-18)
 
 - Use the 22 Tarot cards, the 12 Planet cards, and the 18 Spectral cards.

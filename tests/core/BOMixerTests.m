@@ -120,8 +120,10 @@ BO_TEST(test_mixer_plays_music_at_pitch_0_7_and_restarts_it_at_the_end) {
     bo_mixer_set_volumes(m, 1, 1, 1);
     bo_mixer_add_samples(m, "music1", ramp(70), 70, 2, 100);
     bo_mixer_modulate(m, 0.01f, "music1", 1);
-    int16_t out[200];
-    bo_mixer_render(m, out, 100);
+    // 70 frames at pitch 0.7 take 100 frames. Render 110, so that the
+    // rounding of the pitch does not decide the end.
+    int16_t out[220];
+    bo_mixer_render(m, out, 110);
     // Frame 10 reads the sound at 7, with the gain 0.6.
     BO_EQUAL_INT(out[10 * 2], 4);  // 4.2.
     BO_EQUAL_INT(bo_mixer_voices(m), 0);

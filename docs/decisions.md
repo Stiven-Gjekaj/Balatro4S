@@ -233,3 +233,26 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
   unlocked and nothing is counted, so the fuzz results do not change.
 - **Unlock All is on the setup screen, with a second tap.** Balatro has it
   in the profile menu. The demake has no profile menu yet.
+
+## The challenges, the settings, and the speed
+
+- **The challenges come from `challenges.lua` in a generator** (0.9,
+  2026-10-18). `tools/gen_challenges.lua` writes the rules, the cards, and
+  the banned keys of the 20 challenges into C tables. It writes no text of
+  the descriptions. The start of each challenge agrees with the real
+  `Game:start_run` in `tools/fuzz.py --start`, and the custom rules agree
+  in the round fuzz with `rules N`.
+- **A challenge counts no stats, unlocks, or discoveries.** This is as
+  Balatro does. The high scores still count. A win marks the challenge as
+  complete. Five deck wins open five challenges, and each completion opens
+  one more.
+- **The settings are a file of their own, `settings.b4t`.** They hold the
+  game speed (0.5, 1, 2, or 4) and the screen shake. They are not part of
+  the profile, so a new profile keeps them.
+- **The decoded textures stay in a cache beside `Balatro.love`.** The
+  ImageIO decode of the PNG files took 3.5 s of a 3.95 s start on the A5.
+  The cache holds the resized RGBA pixels of each atlas, about 32 MB, in
+  `/var/mobile/Media/Balatro4S/cache/`. The size and the time of
+  `Balatro.love` are in the header of each file, so a new `Balatro.love`
+  makes the cache old. The first start takes 5.8 s and writes the cache.
+  A later start takes 0.83 s.

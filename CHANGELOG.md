@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0 (2026-10-18)
+
+- The moving background of Balatro, in the colours of the blind and the
+  pack, at 60 frames per second.
+- The cards move with the springs of Balatro. A card leans when it moves
+  and shakes when it scores. The hand fans and sways, and the cards come
+  from the deck one after another.
+- The room and the chips and mult boxes shake when a card scores.
+- The sounds and the music move to 0.7.1. They need a Vorbis decoder.
+
 ## 0.6.0 (2026-10-18)
 
 - Each of the 149 jokers agrees with Balatro in its own tests: 1490 plays,

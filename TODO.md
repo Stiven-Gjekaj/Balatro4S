@@ -45,7 +45,7 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 - Add the Arcana, Celestial, Spectral, Standard, and Buffoon packs in each size.
 - Add the Run Info screen.
 
-## 0.5: card modifiers, vouchers, tags, and all blinds
+## 0.5: card modifiers, vouchers, tags, and all blinds (done, 2026-10-18)
 
 - Add the 8 enhancements.
 - Add the editions: Foil, Holographic, Polychrome, and Negative.

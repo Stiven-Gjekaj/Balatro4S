@@ -15,6 +15,7 @@
 --   shop SEED REROLLS     print the first shop of a run and its rerolls
 --   score FILE            play the hand of a scenario file (tools/scenario.lua)
 --   deck SEED KEY...      print the deck from the top after each shuffle KEY
+--   describe SEED         print the text of each card (tools/describe.lua)
 
 local dir, command = arg[1], arg[2]
 G = {GAME = {pseudorandom = {}}, CONTROLLER = {}}
@@ -108,6 +109,8 @@ elseif command == 'shop' then
     print('packs ' .. get_pack('shop_pack').key .. ' ' .. get_pack('shop_pack').key)
 elseif command == 'score' then
     dofile((arg[0]:gsub('oracle%.lua$', 'scenario.lua')))
+elseif command == 'describe' then
+    dofile((arg[0]:gsub('oracle%.lua$', 'describe.lua')))
 elseif command == 'gen' then
     dofile((arg[0]:gsub('oracle%.lua$', 'gen_data.lua')))
 elseif command == 'genchallenges' then

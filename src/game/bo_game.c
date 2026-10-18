@@ -73,6 +73,8 @@ enum {
     BO_ID_SETUP_BACK,    // The run setup: back to the run that is on.
     BO_ID_UNLOCK_ALL,    // The run setup: unlock all cards, with a second tap.
     BO_ID_COLLECTION,    // The run setup: open the collection.
+    BO_ID_STATS,         // The run setup: open the stats of the profile.
+    BO_ID_STATS_CLOSE,
     BO_ID_COL_CLOSE,
     BO_ID_COL_PREV,
     BO_ID_COL_NEXT,
@@ -195,6 +197,7 @@ static struct {
     float noticeAge;
     float unlockConfirm;    // Unlock All waits for a second tap this long.
     int collection;         // The collection is open.
+    int stats;              // The stats of the profile are open.
     int colTab, colPage, colFocus;  // The tab, the page, and the card that shows its text.
     float blindTagX[2], blindTagY[2];  // The tags of the blind select.
 
@@ -1538,6 +1541,10 @@ static void draw_setup(void) {
         G.collection = 1;
         G.colFocus = -1;
     }
+    if (bo_ui_button(BO_ID_STATS, bo_rect(inner.x + 14, inner.y + 14, colW * 0.6f, G.height * 0.075f), BO_C_ORANGE,
+                     "Stats", 1)) {
+        G.stats = 1;
+    }
     // The deck, between the two arrows.
     float cw = G.cardW * 1.3f, ch = G.cardH * 1.3f;
     float cx = inner.x + inner.w * 0.24f - cw / 2, cy = inner.y + G.height * 0.17f;
@@ -1877,6 +1884,85 @@ static void draw_collection(void) {
         bo_profile_discover_tallies(G.profile, &total, &of, NULL, NULL);
         snprintf(text, sizeof(text), "%d/%d", total, of);
         bo_font_draw(text, inner.x + 14, ay + ah * 0.2f, ah * 0.55f, bo_rgb(BO_C_GREY), BO_ALIGN_LEFT);
+    }
+}
+
+// --- The stats -------------------------------------------------------------
+
+// One row of the stats: a label on the left and a value on the right.
+static void stats_row(const char *label, const char *value, unsigned int colour, float x, float y, float w,
+                      float h) {
+    bo_ui_box(bo_rect(x, y, w, h - 6), BO_C_L_BLACK);
+    bo_font_draw(label, x + 12, y + h * 0.16f, h * 0.5f, bo_rgb(BO_C_WHITE), BO_ALIGN_LEFT);
+    bo_font_draw(value, x + w - 12, y + h * 0.16f, h * 0.5f, bo_rgb(colour), BO_ALIGN_RIGHT);
+}
+
+// create_UIBox_high_scores: the high scores, the progress, and the career
+// stats of the profile.
+static void draw_stats(void) {
+    BORect box = bo_rect(6, 6, G.width - 12, G.height - 12);
+    bo_ui_box(box, BO_C_BLACK);
+    BORect inner = bo_rect(box.x + 6, box.y + 6, box.w - 12, box.h - 12);
+    bo_ui_box(inner, BO_C_DARK);
+    const BOProfile *p = G.profile;
+    if (!p) return;
+    char value[48];
+    float rowH = G.height * 0.072f, colW = inner.w * 0.47f;
+    float lx = inner.x + 12, rx = inner.x + inner.w - colW - 12, y = inner.y + 14;
+    bo_font_draw("High Scores", lx + colW / 2, y, rowH * 0.6f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    bo_font_draw("Progress", rx + colW / 2, y, rowH * 0.6f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    y += rowH * 0.85f;
+    format_number(p->high_scores[BO_HIGH_HAND], value, sizeof(value));
+    stats_row("Best Hand", value, BO_C_RED, lx, y, colW, rowH);
+    snprintf(value, sizeof(value), "%.0f", p->high_scores[BO_HIGH_FURTHEST_ROUND]);
+    stats_row("Highest Round", value, BO_C_WHITE, lx, y + rowH, colW, rowH);
+    snprintf(value, sizeof(value), "%.0f", p->high_scores[BO_HIGH_FURTHEST_ANTE]);
+    stats_row("Highest Ante", value, BO_C_WHITE, lx, y + rowH * 2, colW, rowH);
+    // Most Played Hand: the hand with the most plays.
+    int best = -1, plays = 0;
+    for (int h = 0; h < BO_HAND_COUNT; h++) {
+        if (p->hand_usage[h] > plays) plays = p->hand_usage[h], best = h;
+    }
+    snprintf(value, sizeof(value), "%s", best >= 0 ? bo_hand_name((BOHandType)best, 0) : "None");
+    stats_row("Most Played Hand", value, BO_C_WHITE, lx, y + rowH * 3, colW, rowH);
+    char money[32];
+    format_number(p->high_scores[BO_HIGH_MOST_MONEY], money, sizeof(money));
+    snprintf(value, sizeof(value), "$%s", money);
+    stats_row("Most Money", value, BO_C_MONEY, lx, y + rowH * 4, colW, rowH);
+    snprintf(value, sizeof(value), "%.0f (%.0f)", p->high_scores[BO_HIGH_WIN_STREAK],
+             p->high_scores[BO_HIGH_CURRENT_STREAK]);
+    stats_row("Best Win Streak", value, BO_C_WHITE, lx, y + rowH * 5, colW, rowH);
+    snprintf(value, sizeof(value), "%.0f", p->high_scores[BO_HIGH_BOSS_STREAK]);
+    stats_row("Most Bosses in a Row", value, BO_C_WHITE, lx, y + rowH * 6, colW, rowH);
+    // set_profile_progress: the collection and the wins of each deck at each
+    // stake.
+    int total, of;
+    bo_profile_discover_tallies(p, &total, &of, NULL, NULL);
+    snprintf(value, sizeof(value), "%d%% (%d/%d)", of ? (int)(0.01 + 100.0 * total / of) : 0, total, of);
+    stats_row("Collection", value, BO_C_WHITE, rx, y, colW, rowH);
+    int stakes = 0;
+    for (int d = 0; d < BO_DECK_COUNT; d++) stakes += bo_profile_deck_win_stake(p, (BOCenterId)(BO_B_RED + d));
+    snprintf(value, sizeof(value), "%d%% (%d/%d)", (int)(0.01 + 100.0 * stakes / (BO_DECK_COUNT * BO_STAKE_COUNT)),
+             stakes, BO_DECK_COUNT * BO_STAKE_COUNT);
+    stats_row("Deck Stake Wins", value, BO_C_WHITE, rx, y + rowH, colW, rowH);
+    // The career stats.
+    static const struct {
+        const char *label;
+        BOStat stat;
+    } career[] = {
+        {"Wins", BO_STAT_WINS},           {"Losses", BO_STAT_LOSSES},
+        {"Rounds", BO_STAT_ROUNDS},       {"Hands Played", BO_STAT_HANDS_PLAYED},
+        {"Cards Played", BO_STAT_CARDS_PLAYED}, {"Cards Discarded", BO_STAT_CARDS_DISCARDED},
+        {"Money Earned", BO_STAT_DOLLARS_EARNED},
+    };
+    for (size_t i = 0; i < sizeof(career) / sizeof(career[0]); i++) {
+        format_number(p->stats[career[i].stat], value, sizeof(value));
+        stats_row(career[i].label, value, BO_C_WHITE, rx, y + rowH * (2.25f + i), colW, rowH);
+    }
+    float bw = inner.w * 0.2f, bh = G.height * 0.09f;
+    if (bo_ui_button(BO_ID_STATS_CLOSE, bo_rect(inner.x + (inner.w - bw) / 2, inner.y + inner.h - bh - 8, bw, bh),
+                     BO_C_ORANGE, "Back", 1)) {
+        G.stats = 0;
     }
 }
 
@@ -2466,6 +2552,13 @@ void bo_game_frame(double dt) {
     bo_gfx_begin(G.width, G.height, bo_rgb(0x3a5c4f));
     shake_room();
     if (G.unlockConfirm > 0) G.unlockConfirm -= (float)dt;
+    if (G.stats) {
+        draw_stats();
+        draw_notice(dt);
+        bo_gfx_flush();
+        bo_ui_end();
+        return;
+    }
     if (G.collection) {
         draw_collection();
         draw_notice(dt);

@@ -5,6 +5,8 @@
 # Put each -I and -D option before the sources that need it.
 # The script compiles each source with ARC, then links without ARC.
 # The link step has no -fobjc-arc, so clang does not ask for libarclite.
+# -ffp-contract=off: the game math must round as LuaJIT does, with no fused
+# multiply-add.
 # All code is ARM mode (-marm). The new Apple linker makes Thumb code that
 # crashes on iOS 6 before main starts.
 set -e
@@ -34,7 +36,7 @@ while [ $# -gt 0 ]; do
             obj="$ROOT/build/obj/$(echo "${1%.*}" | sed "s|^$ROOT/||; s|/|_|g").o"
             # shellcheck disable=SC2086
             clang -target armv7-apple-ios6.0 -isysroot "$SDK" -Wno-incompatible-sysroot \
-                -marm -fobjc-arc -Os -Wall -Werror=unguarded-availability $CFLAGS -c "$1" -o "$obj"
+                -marm -fobjc-arc -Os -ffp-contract=off -Wall -Werror=unguarded-availability $CFLAGS -c "$1" -o "$obj"
             OBJS="$OBJS $obj"
             ;;
     esac

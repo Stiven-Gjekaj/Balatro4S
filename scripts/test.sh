@@ -23,7 +23,7 @@ if [ "$1" = "--phone" ]; then
     ssh iphone4s "cd /tmp/botests && ldid -S botests && ./botests $*"
 else
     # shellcheck disable=SC2086
-    clang -fobjc-arc -Wall -Werror -mmacosx-version-min=10.9 -I"$ROOT/src/core" -I"$ROOT/tests" \
+    clang -fobjc-arc -ffp-contract=off -Wall -Werror -mmacosx-version-min=10.9 -I"$ROOT/src/core" -I"$ROOT/tests" \
         $CORE $TESTS -lz -framework Foundation -o "$OUT/botests"
     "$OUT/botests" "$@"
 fi

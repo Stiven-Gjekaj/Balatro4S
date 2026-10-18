@@ -46,6 +46,9 @@ int bo_rules_count_rank(const struct BORun *run, int rank);
 // G.hand:change_size. While the hand is on, a bigger hand draws cards.
 void bo_rules_change_hand_size(struct BORun *run, int delta);
 
+// ease_discard: changes the discards left, but not below 0.
+void bo_rules_ease_discard(struct BORun *run, int delta);
+
 // Card:set_cost with the state of the run.
 void bo_rules_set_cost(struct BORun *run, BOItem *item);
 void bo_rules_set_all_costs(struct BORun *run);

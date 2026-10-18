@@ -145,6 +145,12 @@ void bo_rules_change_hand_size(BORun *run, int delta) {
     }
 }
 
+void bo_rules_ease_discard(BORun *run, int delta) {
+    // ease_discard: the discards left never go below 0.
+    if (delta < -run->discards_left) delta = -run->discards_left;
+    run->discards_left += delta;
+}
+
 void bo_rules_set_cost(BORun *run, BOItem *item) {
     bo_item_set_cost(item, run->inflation, run->discount_percent, bo_run_find_joker(run, BO_J_ASTRONOMER) > 0, 0,
                      run->ante);

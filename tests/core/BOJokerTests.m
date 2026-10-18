@@ -102,3 +102,14 @@ BO_TEST(test_joker_counts_steel_before_vampire_and_waits_with_the_money) {
     BO_EQUAL_INT(run->consumable_count, 1);
     free(run);
 }
+
+BO_TEST(test_joker_leaves_no_negative_discards) {
+    BORun *run = make_run("ABCDEFGH", 10, 4);
+    add_joker(run, BO_J_DRUNKARD, BO_EDITION_NONE);
+    BO_EQUAL_INT(run->discards_left, 4);
+    run->discards_left = 0;
+    // remove_from_deck uses ease_discard, which stops at 0.
+    bo_run_remove_joker(run, 0);
+    BO_EQUAL_INT(run->discards_left, 0);
+    free(run);
+}

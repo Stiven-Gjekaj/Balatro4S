@@ -1019,7 +1019,7 @@ void bo_joker_add_to_deck(BORun *run, BOItem *self) {
     if (A->h_size != 0) bo_rules_change_hand_size(run, (int)A->h_size);
     if (A->d_size > 0) {
         run->discards_per_round += (int)A->d_size;
-        run->discards_left += (int)A->d_size;
+        bo_rules_ease_discard(run, (int)A->d_size);
     }
     if (IS(CREDIT_CARD)) run->bankrupt_at -= (int)A->extra;
     if (IS(CHICOT) && run->state == BO_STATE_SELECTING && bo_blind_info(run->blind)->boss && !run->blind_disabled) {
@@ -1053,7 +1053,7 @@ void bo_joker_remove_from_deck(BORun *run, BOItem *self) {
     if (A->h_size != 0) bo_rules_change_hand_size(run, -(int)A->h_size);
     if (A->d_size > 0) {
         run->discards_per_round -= (int)A->d_size;
-        run->discards_left -= (int)A->d_size;
+        bo_rules_ease_discard(run, -(int)A->d_size);
     }
     if (IS(CREDIT_CARD)) run->bankrupt_at += (int)A->extra;
     if (IS(CHAOS)) {

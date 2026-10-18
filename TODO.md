@@ -76,7 +76,7 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 - Record videos of the game with a screen recorder from Cydia. RecordMyScreen
   is on the phone. A person must start it with a tap.
 
-## 0.8: progress
+## 0.8: progress (done, 2026-10-18)
 
 - Port the 15 decks.
 - Port the 8 stakes, with the Eternal, Perishable, and Rental stickers.

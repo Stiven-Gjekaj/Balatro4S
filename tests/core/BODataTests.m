@@ -57,3 +57,11 @@ BO_TEST(test_data_has_the_unlock_conditions) {
     BO_EXPECT(zodiac->unlock_number == 2);
     BO_EXPECT(bo_center(BO_J_JOKER)->unlock_type == NULL);
 }
+
+BO_TEST(test_data_has_the_cards_that_start_discovered) {
+    int count = 0;
+    for (int i = 0; i < BO_CENTER_COUNT; i++) count += bo_center((BOCenterId)i)->discovered;
+    BO_EQUAL_INT(count, 2);
+    BO_EXPECT(bo_center(BO_J_JOKER)->discovered);
+    BO_EXPECT(bo_center(BO_B_RED)->discovered);
+}

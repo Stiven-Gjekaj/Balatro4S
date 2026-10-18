@@ -189,6 +189,7 @@ typedef struct {
     double unlock_number;
     const char *unlock_text;
     uint8_t unlock_kind;
+    uint8_t discovered;        // The card is in the collection of a new profile.
 } BOCenterInfo;
 
 const BOCenterInfo *bo_center(BOCenterId id);
@@ -255,12 +256,12 @@ for i, v in ipairs(list) do
     elseif u.planet_count then u_number, u_kind = u.planet_count, 2 end
     if u.deck then u_text = u.deck end
     u_number = u.stake or u.ante or u.chips or u.n_rounds or u_number
-    c:write(string.format('%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %s, %s, %s, %s, %d},\n',
+    c:write(string.format('%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %s, %s, %s, %s, %d, %d},\n',
         c_number(cfg.mult), c_number(cfg.h_mult), c_number(cfg.h_x_mult), c_number(cfg.h_dollars),
         c_number(cfg.p_dollars), c_number(cfg.t_mult), c_number(cfg.t_chips), c_number(cfg.Xmult or 1),
         c_number(cfg.h_size), c_number(cfg.d_size), c_number(cfg.bonus), c_number(extra),
         #entries[i], #entries[i] > 0 and ('k' .. i) or 'NULL', c_string(u_type), c_number(u_number),
-        c_string(u_text), u_kind))
+        c_string(u_text), u_kind, v.discovered and 1 or 0))
 end
 c:write([[
 };

@@ -461,6 +461,7 @@ typedef struct {
     double unlock_number;
     const char *unlock_text;
     uint8_t unlock_kind;
+    uint8_t discovered;        // The card is in the collection of a new profile.
 } BOCenterInfo;
 
 const BOCenterInfo *bo_center(BOCenterId id);

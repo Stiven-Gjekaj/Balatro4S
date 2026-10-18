@@ -802,6 +802,9 @@ void bo_game_debug(const char *line) {
     if (sscanf(line, "target %lf", &value) == 1) {
         G.run->blind_chips = value;
         fprintf(stderr, "debug: target %.0f\n", value);
+    } else if (sscanf(line, "ante %lf", &value) == 1) {
+        G.run->ante = (int)value;
+        fprintf(stderr, "debug: ante %.0f\n", value);
     } else if (sscanf(line, "dollars %lf", &value) == 1) {
         G.run->dollars = (int)value;
         fprintf(stderr, "debug: dollars %.0f\n", value);

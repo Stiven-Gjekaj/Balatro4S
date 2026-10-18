@@ -150,6 +150,7 @@ typedef struct BORun {
     uint32_t next_id;        // The node IDs.
     BORoundEval eval;
     BOCenterId voucher;      // current_round.voucher.
+    int boss_rerolled;       // round_resets.boss_rerolled: Director's Cut.
 
     // The cards.
     BOCard deck[BO_MAX_CARDS];  // The top is the last card.

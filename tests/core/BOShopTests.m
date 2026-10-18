@@ -43,3 +43,18 @@ BO_TEST(test_shop_gives_the_cards_of_balatro_for_a_seed) {
     BO_EQUAL(@(bo_center(bo_pool_get_pack(run, "shop_pack", NULL))->key), @"p_arcana_jumbo_1");
     free(run);
 }
+
+BO_TEST(test_shop_gives_a_playing_card_one_sort_id) {
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    run->state = BO_STATE_SHOP;
+    // Only playing cards in the shop, as with Magic Trick and no other rate.
+    run->joker_rate = run->tarot_rate = run->planet_rate = run->spectral_rate = 0;
+    run->playing_card_rate = 4;
+    uint32_t before = run->next_sort_id;
+    BOShopCard card = bo_pool_create_shop_card(run);
+    BO_EXPECT(card.is_playing_card);
+    BO_EQUAL_INT(run->next_sort_id, before + 1);
+    BO_EQUAL_INT(card.card.uid, card.item.sort_id);
+    free(run);
+}

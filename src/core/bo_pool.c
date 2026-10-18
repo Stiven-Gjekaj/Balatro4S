@@ -247,11 +247,12 @@ BOShopCard bo_pool_create_shop_card(BORun *run) {
                 char front[32];
                 snprintf(front, sizeof(front), "frontsho%d", run->ante);
                 BOCard card = bo_rules_random_front(run, front);
-                card.uid = bo_run_new_sort_id(run);
+                // One Card() makes the card, so it has one sort_id.
+                shop.item = make_item(run, center);
+                card.uid = shop.item.sort_id;
                 card.enhancement = (uint8_t)bo_rules_enhancement_of(center);
                 shop.is_playing_card = 1;
                 shop.card = card;
-                shop.item = make_item(run, center);
                 if (run->used_vouchers[BO_V_ILLUSION] && bo_pseudorandom(&run->random, "illusion") > 0.8) {
                     double poll = bo_pseudorandom(&run->random, "illusion");
                     shop.card.edition = poll > 1 - 0.15 ? BO_EDITION_POLYCHROME : poll > 0.5 ? BO_EDITION_HOLO : BO_EDITION_FOIL;

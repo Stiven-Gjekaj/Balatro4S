@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.1 (2026-10-18)
+
+- The icon has the rounded corners and the gloss of iOS 6, also in Cydia.
+
 ## 0.10.0 (2026-10-18)
 
 - The sounds and the music of Balatro. The five music tracks change with

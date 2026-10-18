@@ -155,3 +155,35 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
   the events of Balatro.** For example, The Hook discards before the score,
   The Tooth takes the money before the score, and The Ox sets the money to
   $0 at once.
+
+## Each joker against Balatro
+
+- **Each of the 149 jokers agrees with Balatro in its own runs** (0.6,
+  2026-10-18). `tools/fuzz.py --each N` puts each joker in N scenarios with
+  random other jokers. `--round` adds a discard before the play and the
+  end of the round after it. On the final code:
+  - `--each 10`: 1490 of 1490 plays agree.
+  - `--round --each 10`: 1490 of 1490 rounds agree.
+  - `--blind --round --each 6`: 894 of 894 rounds with a random blind
+    agree.
+  To Do List is the 150th joker. Its hand comes from `pairs()` over
+  strings, so the fuzzer does not test it (see "The jokers").
+- **The fuzzer found faults that the earlier tests did not see.** A
+  discard of no card used a discard, the blind was defeated before the
+  held Gold cards paid, and an empty draw sorted the hand. Each fix has its
+  own commit and test.
+
+## The shaders
+
+- **The editions and the shines use the shaders of Balatro.love** (0.7,
+  early part, 2026-10-18). The app reads `resources/shaders/*.fs` from the
+  Balatro.love of the owner, and compiles them for OpenGL ES 2.0 with a
+  short header that maps the LOVE names to GLSL ES. The repository holds
+  no shader of Balatro.
+- **A cache keeps the shaders at 60 frames per second.** On the A5, one
+  card with the foil shader takes about 7 ms, so 5 cards gave 18 frames
+  per second. Each card with an effect renders into a slot of a 1024 x
+  1024 texture: the shines at half size, and the Negative cards at full
+  size because they replace the card. Each frame renders again the two
+  slots that waited longest. With 10 cards with editions and a Spectral
+  card, the game runs at 60 frames per second.

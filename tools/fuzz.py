@@ -265,6 +265,8 @@ def scenario(rng, jokers):
         lines.append("hand " + " ".join(held))
     if rng.random() < 0.3:
         lines.append("back %s" % rng.choice(BACKS))
+    if rng.random() < 0.3:
+        lines.append("rules %d" % rng.choice(RULE_CHALLENGES))
     if "--blind" in sys.argv:
         lines.append("blind " + rng.choice(BLINDS))
         lines.append("most_played " + rng.choice(HANDS))
@@ -285,9 +287,16 @@ BACKS = ["b_red", "b_blue", "b_yellow", "b_green", "b_black", "b_magic", "b_nebu
          "b_checkered", "b_zodiac", "b_painted", "b_anaglyph", "b_plasma", "b_erratic"]
 
 
+# The challenges with custom rules for a play. Luxury Tax (6) changes the
+# hand size in CardArea:update, which the oracle does not run.
+RULE_CHALLENGES = [0, 2, 4, 5, 7, 9, 10, 11, 12, 17, 18, 19]
+
+
 def start_scenario(rng):
     # A new run with a random deck and seed: tools/start.lua runs start_run.
     seed = "".join(rng.choice("123456789ABCDEFGHIJKLMNPQRSTUVWXYZ") for _ in range(8))
+    if rng.random() < 0.3:
+        return "seed %s\nchallenge %d\nstart\n" % (seed, rng.randint(0, 19))
     return "seed %s\nback %s\nstake %d\nstart\n" % (seed, rng.choice(BACKS), rng.randint(1, 8))
 
 

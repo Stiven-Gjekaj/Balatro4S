@@ -37,6 +37,7 @@
 --   target 100            (the chips of the blind)
 --   tag tag_key           (skip a Small Blind for this tag; more lines skip
 --                          more blinds, then a shop opens, in place of a play)
+--   rules N               (the custom rules of challenge N, from 0)
 --   back b_key, stake N, start
 --                         (start a run with Game:start_run, and print the
 --                          state of the start, with tools/start.lua)
@@ -59,7 +60,7 @@ end
 -- A "start" line: the state of start_run with a deck and a stake.
 for _, w in ipairs(lines) do
     if w[1] == 'start' then
-        dofile((arg[0]:gsub('oracle%.lua$', 'start.lua')))(B, lines)
+        dofile((arg[0]:gsub('oracle%.lua$', 'start.lua')))(B, lines, dir)
         return
     end
 end
@@ -86,6 +87,27 @@ area('play', 5, 'play')
 area('deck', 500, 'deck')
 area('discard', 500, 'discard')
 G.playing_cards = {}
+-- A "rules N" line: the custom rules of challenge N (from 0), as start_run
+-- sets them in G.GAME.modifiers. They come before the blind, as in a run.
+for _, w in ipairs(lines) do
+    if w[1] == 'rules' then
+        dofile(dir .. '/challenges.lua')
+        for _, v in ipairs(G.CHALLENGES[tonumber(w[2]) + 1].rules.custom or {}) do
+            if v.id == 'no_reward' then
+                G.GAME.modifiers.no_blind_reward = {Small = true, Big = true, Boss = true}
+            elseif v.id == 'no_reward_specific' then
+                G.GAME.modifiers.no_blind_reward = G.GAME.modifiers.no_blind_reward or {}
+                G.GAME.modifiers.no_blind_reward[v.value] = true
+            elseif v.value then
+                G.GAME.modifiers[v.id] = v.value
+            elseif v.id == 'no_shop_jokers' then
+                G.GAME.joker_rate = 0
+            else
+                G.GAME.modifiers[v.id] = true
+            end
+        end
+    end
+end
 G.GAME.blind = Blind(0, 0, 1, 1)
 G.GAME.blind:set_blind(G.P_BLINDS.bl_small)
 B.manager:run_all()

@@ -348,15 +348,20 @@ static char rank_char(int rank) {
 static int print_start(FILE *file, const char *seed) {
     char line[256], key[64];
     BOCenterId back = BO_B_RED;
-    int stake = 1;
+    int stake = 1, challenge = -1;
     rewind(file);
     while (fgets(line, sizeof(line), file)) {
         if (sscanf(line, "back %63s", key) == 1) back = bo_center_by_key(key);
         sscanf(line, "stake %d", &stake);
+        sscanf(line, "challenge %d", &challenge);
     }
     static BORun runStorage;
     BORun *run = &runStorage;
-    bo_run_start_deck(run, seed, back, stake);
+    if (challenge >= 0) {
+        bo_run_start_challenge(run, seed, challenge);
+    } else {
+        bo_run_start_deck(run, seed, back, stake);
+    }
     printf("start hands %d discards %d dollars %d hand_size %d joker_slots %d consumable_slots %d\n",
            run->hands_per_round, run->discards_per_round, run->dollars, run->hand_size, run->joker_slots,
            run->consumable_slots);
@@ -388,6 +393,37 @@ static int print_start(FILE *file, const char *seed) {
     // The top of the deck is the end of the list.
     printf("deck %d", run->deck_count);
     for (int i = run->deck_count - 1; i >= 0; i--) print_card(&run->deck[i]);
+    printf("\njokers");
+    for (int i = 0; i < run->joker_count; i++) {
+        const BOItem *j = &run->jokers[i];
+        printf(" %s%s%s%s%s", bo_center(j->center)->key, j->edition ? ":" : "", edition_name(j->edition),
+               j->eternal ? ":E" : "", j->pinned ? ":P" : "");
+    }
+    printf("\nrules reward %d%d%d hand_money %s cap %s flip %d minus %d eternal_ante %d slots_ante %d "
+           "discard_cost %d joker_rate %g inflation %s debuff %s all_eternal %s\n",
+           !(run->no_blind_reward & 1), !(run->no_blind_reward & 2), !(run->no_blind_reward & 4),
+           run->no_extra_hand_money ? "no" : "yes", run->chips_dollar_cap ? "yes" : "no", run->flipped_cards,
+           run->minus_hand_size_per_x_dollar, run->set_eternal_ante, run->set_joker_slots_ante, run->discard_cost,
+           run->joker_rate, run->inflation_rule ? "yes" : "no", run->debuff_played_cards ? "yes" : "no",
+           run->all_eternal ? "yes" : "no");
+    // The banned keys, in the order of their keys.
+    const char *banned[BO_CENTER_COUNT + BO_BLIND_COUNT];
+    int bannedCount = 0;
+    for (int c = 0; c < BO_CENTER_COUNT; c++) {
+        if (run->banned[c]) banned[bannedCount++] = bo_center((BOCenterId)c)->key;
+    }
+    for (int b = 0; b < BO_BLIND_COUNT; b++) {
+        if (run->banned_blinds[b]) banned[bannedCount++] = bo_blind_info((BOBlindId)b)->key;
+    }
+    for (int i = 1; i < bannedCount; i++) {
+        for (int j = i; j > 0 && strcmp(banned[j - 1], banned[j]) > 0; j--) {
+            const char *t = banned[j];
+            banned[j] = banned[j - 1];
+            banned[j - 1] = t;
+        }
+    }
+    printf("banned");
+    for (int i = 0; i < bannedCount; i++) printf(" %s", banned[i]);
     printf("\nround idol %c %s mail %c ancient %s castle %s\n", rank_char(run->idol_rank),
            run->idol_rank > 0 ? suit_name(run->idol_suit) : "-", rank_char(run->mail_rank),
            suit_name(run->ancient_suit), suit_name(run->castle_suit));
@@ -405,10 +441,11 @@ int main(int argc, char **argv) {
     BORun *run = &runStorage;
     char line[1024];
     char seed[16] = "ABCDEFGH";
-    int start = 0;
+    int start = 0, rulesIndex = -1;
     while (fgets(line, sizeof(line), file)) {
         if (strncmp(line, "seed ", 5) == 0) sscanf(line + 5, "%15s", seed);
         if (strncmp(line, "start", 5) == 0) start = 1;
+        sscanf(line, "rules %d", &rulesIndex);
     }
     if (start) return print_start(file, seed);
     // The state of start_run with no deck, as tools/scenario.lua makes it.
@@ -418,7 +455,9 @@ int main(int argc, char **argv) {
     run->state = BO_STATE_SELECTING;
     run->blind = BO_BL_SMALL;
     run->blind_chips = 300;
-    run->blind_dollars = bo_blind_info(BO_BL_SMALL)->dollars;
+    // A "rules N" line: the custom rules of challenge N, before the blind.
+    if (rulesIndex >= 0) bo_run_apply_challenge_rules(run, rulesIndex);
+    run->blind_dollars = (run->no_blind_reward & 1) ? 0 : bo_blind_info(BO_BL_SMALL)->dollars;
     run->dollars = 4;
     run->hands_left = 4;
     run->discards_left = 3;
@@ -560,6 +599,8 @@ int main(int argc, char **argv) {
     if (blindId >= 0) {
         run->blind = (BOBlindId)blindId;
         run->blind_dollars = bo_blind_info(run->blind)->dollars;
+        int typeBit = run->blind == BO_BL_SMALL ? 1 : run->blind == BO_BL_BIG ? 2 : 4;
+        if (run->no_blind_reward & typeBit) run->blind_dollars = 0;
         bo_boss_set_blind(run);
         bo_boss_press_play(run);
     }

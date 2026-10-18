@@ -8,12 +8,17 @@
 -- start_run builds the screen too. The stubs below replace only the parts
 -- of the screen that start_run calls. The rules stay the code of Balatro.
 
-return function(B, lines)
-    local seed, back, stake = 'ABCDEFGH', 'b_red', 1
+return function(B, lines, dir)
+    local seed, back, stake, challenge = 'ABCDEFGH', 'b_red', 1, nil
     for _, w in ipairs(lines) do
         if w[1] == 'seed' then seed = w[2]
         elseif w[1] == 'back' then back = w[2]
-        elseif w[1] == 'stake' then stake = tonumber(w[2]) end
+        elseif w[1] == 'stake' then stake = tonumber(w[2])
+        elseif w[1] == 'challenge' then challenge = tonumber(w[2]) end
+    end
+    if challenge then
+        dofile(dir .. '/challenges.lua')
+        challenge = G.CHALLENGES[challenge + 1]
     end
 
     -- An object that answers each index and each call with another one.
@@ -35,12 +40,16 @@ return function(B, lines)
 
     G.GAME = G:init_game_object()
     G.GAME.viewed_back = Back(G.P_CENTERS[back])
-    G:start_run({seed = seed, stake = stake})
+    G:start_run({seed = seed, stake = stake, challenge = challenge})
     B.manager:run_all()
 
     local letters = {['10'] = 'T', Jack = 'J', Queen = 'Q', King = 'K', Ace = 'A'}
     local function card_text(c)
-        return c.base.suit:sub(1, 1) .. '_' .. (letters[c.base.value] or c.base.value)
+        local text = c.base.suit:sub(1, 1) .. '_' .. (letters[c.base.value] or c.base.value)
+        if c.config.center.key ~= 'c_base' then text = text .. ':' .. c.config.center.key end
+        if c.edition then text = text .. ':' .. c.edition.type end
+        if c.seal then text = text .. ':' .. c.seal end
+        return text
     end
     local function rank_text(id)
         if not id then return '-' end
@@ -73,6 +82,25 @@ return function(B, lines)
     local deck = {}
     for i = #G.deck.cards, 1, -1 do deck[#deck + 1] = card_text(G.deck.cards[i]) end
     print('deck ' .. #G.deck.cards .. ' ' .. table.concat(deck, ' '))
+    local jokers = {}
+    for i, c in ipairs(G.jokers.cards) do
+        jokers[i] = c.config.center.key .. (c.edition and (':' .. c.edition.type) or '') ..
+                    (c.ability.eternal and ':E' or '') .. (c.pinned and ':P' or '')
+    end
+    print(table.concat({'jokers', unpack(jokers)}, ' '))
+    local m = GAME.modifiers
+    local reward = m.no_blind_reward or {}
+    print(string.format('rules reward %d%d%d hand_money %s cap %s flip %d minus %d eternal_ante %d ' ..
+        'slots_ante %d discard_cost %d joker_rate %g inflation %s debuff %s all_eternal %s',
+        reward.Small and 0 or 1, reward.Big and 0 or 1, reward.Boss and 0 or 1,
+        m.no_extra_hand_money and 'no' or 'yes', m.chips_dollar_cap and 'yes' or 'no', m.flipped_cards or 0,
+        m.minus_hand_size_per_X_dollar or 0, m.set_eternal_ante or 0, m.set_joker_slots_ante or 0,
+        m.discard_cost or 0, GAME.joker_rate, m.inflation and 'yes' or 'no',
+        m.debuff_played_cards and 'yes' or 'no', m.all_eternal and 'yes' or 'no'))
+    local banned = {}
+    for k in pairs(GAME.banned_keys) do banned[#banned + 1] = k end
+    table.sort(banned)
+    print(table.concat({'banned', unpack(banned)}, ' '))
     local r = GAME.current_round
     print('round idol ' .. rank_text(r.idol_card.id) .. ' ' .. (r.idol_card.suit or '-') ..
           ' mail ' .. rank_text(r.mail_card.id) .. ' ancient ' .. (r.ancient_card.suit or '-') ..

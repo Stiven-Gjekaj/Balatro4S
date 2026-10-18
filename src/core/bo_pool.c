@@ -9,6 +9,7 @@
 
 #include "bo_joker.h"
 #include "bo_rules.h"
+#include "bo_tag.h"
 #include "bo_run.h"
 
 #pragma STDC FP_CONTRACT OFF
@@ -63,6 +64,9 @@ int bo_pool_build(const BORun *run, int type, int rarity, BOCenterId *pool, int 
                     const char *requires = bo_center_text(c, BO_F_REQUIRES_1);
                     if (requires && !run->used_vouchers[bo_center_by_key(requires)]) include = 0;
                     if (run->has_shop_voucher && run->shop_voucher.center == (BOCenterId)i) include = 0;
+                    for (int t = 0; t < run->tag_voucher_count; t++) {
+                        if (run->tag_vouchers[t].center == (BOCenterId)i) include = 0;
+                    }
                     add = include;
                 }
             } else if (c->set == BO_SET_PLANET) {
@@ -219,6 +223,8 @@ BOItem bo_run_create_item(BORun *run, int type, int rarity, int legendary, int s
 BOShopCard bo_pool_create_shop_card(BORun *run) {
     BOShopCard shop;
     memset(&shop, 0, sizeof(shop));
+    // Rare Tag and Uncommon Tag make the card in place of the shop.
+    if (bo_tag_store_joker_create(run, &shop)) return shop;
     double total = run->joker_rate + run->tarot_rate + run->planet_rate + run->playing_card_rate + run->spectral_rate;
     char key[32];
     snprintf(key, sizeof(key), "cdt%d", run->ante);
@@ -261,6 +267,7 @@ BOShopCard bo_pool_create_shop_card(BORun *run) {
                 }
             } else {
                 shop.item = bo_run_create_item(run, kinds[k].type, 0, 0, 0, BO_CENTER_NONE, "sho", 1);
+                bo_tag_store_joker_modify(run, &shop.item);
             }
             return shop;
         }

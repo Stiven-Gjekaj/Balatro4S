@@ -6,6 +6,7 @@
 #include "bo_boss.h"
 #include "bo_joker.h"
 #include "bo_run.h"
+#include "bo_tag.h"
 
 #pragma STDC FP_CONTRACT OFF
 
@@ -195,7 +196,8 @@ void bo_rules_calculate_reroll_cost(BORun *run, int skip_increment) {
         return;
     }
     if (!skip_increment) run->reroll_cost_increase++;
-    run->reroll_cost = run->reroll_cost_base + run->reroll_cost_increase;
+    int base = run->temp_reroll_cost >= 0 ? run->temp_reroll_cost : run->reroll_cost_base;
+    run->reroll_cost = base + run->reroll_cost_increase;
 }
 
 BOItem bo_rules_copy_item(BORun *run, const BOItem *other, int strip_edition) {
@@ -213,7 +215,7 @@ void bo_rules_disable_blind(BORun *run) {
 }
 
 void bo_rules_add_tag(BORun *run, BOCenterId tag) {
-    if (run->tag_count < (int)(sizeof(run->tags) / sizeof(run->tags[0]))) run->tags[run->tag_count++] = tag;
+    bo_tag_add(run, tag, BO_TAG_FROM_NONE);
 }
 
 // The keys of G.P_CARDS in the order of their sort: "C_2" to "C_9", "C_A",

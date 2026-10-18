@@ -12,6 +12,7 @@
 #include "bo_pack.h"
 #include "bo_pool.h"
 #include "bo_rules.h"
+#include "bo_tag.h"
 
 #pragma STDC FP_CONTRACT OFF
 
@@ -195,6 +196,7 @@ void bo_run_start(BORun *run, const char *seed) {
     run->ecto_minus = 1;
     run->pack = BO_CENTER_NONE;
     run->mouth_hand = BO_HAND_NONE;
+    run->temp_reroll_cost = -1;
     run->last_hand_played = BO_HAND_NONE;
     run->most_played_hand = BO_HAND_HIGH_CARD;
     run->ancient_suit = BO_SPADES;
@@ -210,8 +212,8 @@ void bo_run_start(BORun *run, const char *seed) {
     // the first shuffle, then the cards of the round.
     run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, NULL);
     run->voucher = bo_pool_next_voucher(run, 0);
-    bo_pool_next_tag(run, NULL);
-    bo_pool_next_tag(run, NULL);
+    run->blind_tags[0] = bo_pool_next_tag(run, NULL);
+    run->blind_tags[1] = bo_pool_next_tag(run, NULL);
     for (int s = 0; s < 4; s++) {
         for (int r = 0; r < 13; r++) {
             BOCard card = bo_card_make(kRankOrder[r], (BOSuit)kSuitOrder[s]);
@@ -225,6 +227,7 @@ void bo_run_start(BORun *run, const char *seed) {
     reset_round_cards(run);
     run->slot = BO_SLOT_SMALL;
     run->state = BO_STATE_BLIND_SELECT;
+    bo_tag_orbital_choices(run);
 }
 
 BOBlindId bo_run_slot_blind(const BORun *run, BOBlindSlot slot) {
@@ -291,6 +294,7 @@ void bo_run_select_blind(BORun *run) {
     char key[16];
     snprintf(key, sizeof(key), "nr%d", run->ante);
     shuffle_deck(run, key);
+    bo_tag_round_start_bonus(run);
     draw_to_hand(run);
     for (int i = 0; i < run->joker_count; i++) {
         BOContext ctx = context_for(BO_CTX_FIRST_HAND_DRAWN);
@@ -435,6 +439,14 @@ static void end_round(BORun *run) {
         run->voucher = bo_pool_next_voucher(run, 0);
         for (int i = 0; i < run->deck_count; i++) run->deck[i].played_this_ante = 0;
     }
+    if (run->temp_handsize) {
+        bo_rules_change_hand_size(run, -run->temp_handsize);
+        run->temp_handsize = 0;
+    }
+    if (run->temp_reroll_cost >= 0) {
+        run->temp_reroll_cost = -1;
+        bo_rules_calculate_reroll_cost(run, 1);
+    }
     reset_round_cards(run);
 
     // evaluate_round: the money of the round.
@@ -446,6 +458,8 @@ static void end_round(BORun *run) {
         int dollars = bo_joker_dollar_bonus(run, &run->jokers[i], &has);
         if (has) add_eval_row(run, BO_EVAL_JOKER, i, 0, dollars);
     }
+    int investment = bo_tag_eval(run);
+    if (investment) add_eval_row(run, BO_EVAL_TAG, 0, 0, investment);
     if (run->dollars >= 5) {
         int steps = run->dollars / 5;
         if (steps > run->interest_cap / 5) steps = run->interest_cap / 5;
@@ -564,7 +578,7 @@ int bo_run_discard(BORun *run, uint64_t mask) {
     return 1;
 }
 
-static void fill_shop(BORun *run);
+void bo_run_fill_shop(BORun *run);
 
 void bo_run_cash_out(BORun *run) {
     if (run->state != BO_STATE_ROUND_EVAL) return;
@@ -578,9 +592,11 @@ void bo_run_cash_out(BORun *run) {
     if (run->hands_left < 1) run->hands_left = 1;
     run->dollars += run->eval.total;
     run->chips = 0;
+    run->shop_free = 0;
+    run->shop_d6ed = 0;
     if (run->slot == BO_SLOT_BOSS) {
-        bo_pool_next_tag(run, NULL);
-        bo_pool_next_tag(run, NULL);
+        run->blind_tags[0] = bo_pool_next_tag(run, NULL);
+        run->blind_tags[1] = bo_pool_next_tag(run, NULL);
         run->slot = BO_SLOT_SMALL;
         run->boss = bo_blind_new_boss(&run->random, run->ante, run->win_ante, run->bosses_used, NULL);
         run->boss_rerolled = 0;
@@ -588,7 +604,7 @@ void bo_run_cash_out(BORun *run) {
         run->slot++;
     }
     run->state = BO_STATE_SHOP;
-    fill_shop(run);
+    bo_run_fill_shop(run);
 }
 
 // --- The shop -------------------------------------------------------------
@@ -606,8 +622,10 @@ void bo_run_forget_card(BORun *run, BOCenterId center) {
     run->used_jokers[center] = 0;
 }
 
-static void fill_shop(BORun *run) {
+void bo_run_fill_shop(BORun *run) {
+    bo_tag_shop_start(run);
     run->shop_count = 0;
+    run->tag_voucher_count = 0;
     for (int i = 0; i < run->shop_joker_max && run->shop_count < BO_MAX_SHOP; i++) {
         run->shop[run->shop_count++] = bo_pool_create_shop_card(run);
     }
@@ -624,6 +642,8 @@ static void fill_shop(BORun *run) {
         }
     }
     run->used_packs_set = 1;
+    bo_tag_voucher_add(run);
+    bo_tag_shop_final_pass(run);
 }
 
 int bo_run_reroll(BORun *run) {
@@ -771,10 +791,13 @@ void bo_run_end_shop(BORun *run) {
     for (int i = 0; i < run->shop_count; i++) bo_run_forget_card(run, run->shop[i].item.center);
     if (run->has_shop_voucher) bo_run_forget_card(run, run->shop_voucher.center);
     for (int i = 0; i < run->shop_pack_count; i++) bo_run_forget_card(run, run->shop_packs[i].center);
+    for (int i = 0; i < run->tag_voucher_count; i++) bo_run_forget_card(run, run->tag_vouchers[i].center);
     run->shop_count = 0;
     run->has_shop_voucher = 0;
+    run->tag_voucher_count = 0;
     run->shop_pack_count = 0;
     run->state = BO_STATE_BLIND_SELECT;
+    bo_tag_orbital_choices(run);
 }
 
 void bo_run_move_joker(BORun *run, int from, int to) {

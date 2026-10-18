@@ -42,6 +42,7 @@ typedef enum {
     BO_EVAL_DISCARDS,  // Green Deck: $1 for each discard that is left.
     BO_EVAL_JOKER,     // A joker: Golden Joker, Rocket, and others.
     BO_EVAL_INTEREST,
+    BO_EVAL_TAG,       // Investment Tag.
 } BOEvalKind;
 
 typedef struct {
@@ -63,6 +64,13 @@ typedef struct {
     BOItem item;
     BOCard card;  // When is_playing_card. item then has the cost.
 } BOShopCard;
+
+// A tag that waits (G.GAME.tags).
+typedef struct {
+    BOCenterId center;
+    int orbital_hand;  // Orbital Tag: a BOHandType.
+    int triggered;
+} BOTag;
 
 // The data of each poker hand in the run (G.GAME.hands).
 typedef struct {
@@ -192,9 +200,18 @@ typedef struct BORun {
     int pending_hallucinations;  // Tarot cards of Hallucination that wait.
     BORunState pack_return;  // G.GAME.PACK_INTERRUPT.
 
-    // The tags that wait (G.GAME.tags).
-    BOCenterId tags[32];
+    // The tags that wait (G.GAME.tags), and the tags of the blinds.
+    BOTag tags[32];
     int tag_count;
+    BOCenterId blind_tags[2];  // round_resets.blind_tags: Small and Big.
+    int orbital_choices[3];    // The hand of an Orbital Tag of each blind.
+    int orbital_ante;          // The ante of orbital_choices.
+    int temp_handsize;         // Juggle Tag: the hand size of this round.
+    int temp_reroll_cost;      // D6 Tag: the base reroll cost, or -1.
+    int shop_free;             // Coupon Tag acted in this shop.
+    int shop_d6ed;             // D6 Tag acted in this shop.
+    BOItem tag_vouchers[4];    // Voucher Tag: more vouchers in this shop.
+    int tag_voucher_count;
 } BORun;
 
 // Starts a run of the Red Deck at stake 1 with seed, for example
@@ -235,6 +252,8 @@ int bo_run_buy(BORun *run, int index);
 // Sells joker index. Returns 0 when the joker is eternal.
 int bo_run_sell_joker(BORun *run, int index);
 int bo_run_sell_consumable(BORun *run, int index);
+// Makes the cards of a new shop, with the effects of the tags.
+void bo_run_fill_shop(BORun *run);
 // Buys and opens shop pack index. See bo_pack.h for the open pack.
 int bo_run_open_pack(BORun *run, int index);
 // Uses consumable index on the cards of the hand that highlighted selects.

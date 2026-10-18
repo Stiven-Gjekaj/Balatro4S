@@ -7,6 +7,7 @@
 #include "bo_joker.h"
 #include "bo_pool.h"
 #include "bo_rules.h"
+#include "bo_tag.h"
 
 #pragma STDC FP_CONTRACT OFF
 
@@ -168,6 +169,8 @@ static void close_pack(BORun *run) {
     }
     run->state = run->pack_return;
     run->pack = BO_CENTER_NONE;
+    // end_consumeable: the next tag of the blind select can act.
+    bo_tag_new_blind_choice(run);
 }
 
 int bo_pack_choose(BORun *run, int index, uint64_t highlighted) {

@@ -222,12 +222,12 @@ BO_TEST(test_describe_removes_the_spaces_in_a_box) {
     free(run);
 }
 
-BO_TEST(test_describe_adds_the_last_card_of_the_fool) {
+BO_TEST(test_describe_adds_the_last_card_of_the_fool_and_the_number_of_misprint) {
     BOLuaValue *text = bo_luatab_parse(
         "return { descriptions = { Tarot = {\n"
         "  c_fool = { name = 'The Fool', text = { 'Creates the last' } },\n"
         "  c_moon = { name = 'The Moon', text = { 'x' } },\n"
-        "} },\n"
+        "}, Joker = { j_misprint = { name = 'Misprint', text = { '' } } } },\n"
         "misc = { dictionary = { k_none = 'None' } } }");
     bo_describe_set_text(text);
     BORun *run = calloc(1, sizeof(BORun));
@@ -241,6 +241,11 @@ BO_TEST(test_describe_adds_the_last_card_of_the_fool) {
     run->last_tarot_planet = BO_C_MOON;
     bo_describe_item(run, &fool, &d);
     BO_EQUAL(@(d.lines[1]), @"{X:green,C:white}The Moon{}");
+    BOItem misprint = bo_pool_make_item(run, BO_J_MISPRINT);
+    BO_EXPECT(bo_describe_item(run, &misprint, &d));
+    int value = -1;
+    BO_EQUAL_INT(sscanf(d.lines[0], "{C:mult}+%d{} Mult", &value), 1);
+    BO_EXPECT(value >= 0 && value <= 23);
     bo_describe_set_text(NULL);
     bo_luatab_free(text);
     free(run);

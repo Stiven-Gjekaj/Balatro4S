@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "bo_rules.h"
 #include "bo_run.h"
@@ -416,6 +417,17 @@ int bo_describe_item(const BORun *run, const BOItem *item, BODescription *out) {
         BOLuaValue *line = bo_luatab_item(text, i);
         if (!line || line->type != BO_LUA_STRING) continue;
         fill_line(line->string, &vars, out->lines[out->line_count++], BO_DESCRIBE_LINE_LENGTH);
+    }
+    if (item->center == BO_J_MISPRINT && out->line_count > 0) {
+        // main_start of Misprint: "+" and a number from min to max that
+        // changes each half second, then "Mult".
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        unsigned step = (unsigned)(now.tv_sec * 2 + now.tv_usec / 500000);
+        step = step * 2654435761u >> 16;
+        int low = (int)bo_item_get(item, BO_F_EXTRA_MIN), high = (int)bo_item_get(item, BO_F_EXTRA_MAX);
+        int value = high > low ? low + (int)(step % (unsigned)(high - low + 1)) : low;
+        snprintf(out->lines[0], BO_DESCRIBE_LINE_LENGTH, "{C:mult}+%d{} Mult", value);
     }
     if (item->center == BO_C_FOOL && out->line_count < BO_DESCRIBE_LINES) {
         // main_end of The Fool: the last Tarot or Planet card in a box, green,

@@ -11,6 +11,7 @@
 --   bosses SEED ANTES     print the boss of each ante from 1 to ANTES
 --   string SEED           print random_string(8, SEED), a new seed of a run
 --   gen OUTPUT_DIR        write bo_data.h and bo_data.c (tools/gen_data.lua)
+--   shop SEED REROLLS     print the first shop of a run and its rerolls
 --   score FILE            play the hand of a scenario file (tools/scenario.lua)
 --   deck SEED KEY...      print the deck from the top after each shuffle KEY
 
@@ -62,6 +63,48 @@ elseif command == 'bosses' then
         out[#out + 1] = get_new_boss()
     end
     print(table.concat(out, ' '))
+elseif command == 'shop' then
+    local B = dofile((arg[0]:gsub('oracle%.lua$', 'headless.lua')))(dir)
+    G.SETTINGS.profile = 1
+    G.PROFILES = {{career_stats = {}, high_scores = {}}}
+    G:init_item_prototypes()
+    for k, v in pairs(G.P_CENTERS) do v.unlocked = true; v.discovered = true end
+    G.GAME = G:init_game_object()
+    G.GAME.pseudorandom.seed = arg[3]
+    G.GAME.pseudorandom.hashed_seed = pseudohash(arg[3])
+    G.GAME.selected_back = Back(G.P_CENTERS.b_red)
+    for _, n in ipairs({'jokers', 'consumeables', 'hand', 'deck', 'play', 'discard'}) do
+        G[n] = CardArea(0, 0, 1, 1, {card_limit = 5, type = n == 'jokers' and 'joker' or n})
+    end
+    G.playing_cards = {}
+    G.shop_jokers = CardArea(0, 0, 1, 1, {card_limit = 2, type = 'shop'})
+    create_shop_card_ui = function() end
+    -- start_run: the boss, the voucher, and the tags of the first ante.
+    G.GAME.round_resets.blind_choices.Boss = get_new_boss()
+    G.GAME.current_round.voucher = get_next_voucher_key()
+    get_next_tag_key()
+    get_next_tag_key()
+    local function show()
+        local out = {}
+        for _, c in ipairs(G.shop_jokers.cards) do
+            local e = c.edition and c.edition.type or ''
+            out[#out + 1] = c.config.center.key .. (e ~= '' and (':' .. e) or '') ..
+                (c.base and c.base.value and c.ability.set ~= 'Joker' and c.playing_card ~= nil and (':' .. c.base.value) or '')
+        end
+        print(table.concat(out, ' '))
+    end
+    for i = 1, 2 do G.shop_jokers:emplace(create_card_for_shop(G.shop_jokers)) end
+    show()
+    for r = 1, tonumber(arg[4]) do
+        for i = #G.shop_jokers.cards, 1, -1 do
+            local c = G.shop_jokers:remove_card(G.shop_jokers.cards[i])
+            c:remove()
+        end
+        for i = 1, 2 do G.shop_jokers:emplace(create_card_for_shop(G.shop_jokers)) end
+        show()
+    end
+    print('voucher ' .. G.GAME.current_round.voucher)
+    print('packs ' .. get_pack('shop_pack').key .. ' ' .. get_pack('shop_pack').key)
 elseif command == 'score' then
     dofile((arg[0]:gsub('oracle%.lua$', 'scenario.lua')))
 elseif command == 'gen' then

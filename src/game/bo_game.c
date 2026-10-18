@@ -130,6 +130,9 @@ static struct {
     BOTexture boosters;  // boosters.png.
     BOTexture tags;      // tags.png.
     int effects;         // The shaders of the editions compiled.
+    // The background: its three colours, its contrast, and its spin.
+    BOColor backC, backL, backD;
+    float backContrast, backSpin, backSpinTime;
     BOLuaValue *text;    // localization/en-us.lua.
 
     BORun *run;
@@ -362,7 +365,8 @@ int bo_game_start(const char *love_path, int width, int height) {
         const char *name;
     } kEffects[] = {{BO_FX_FOIL, "foil"}, {BO_FX_HOLO, "holo"}, {BO_FX_POLYCHROME, "polychrome"},
                     {BO_FX_NEGATIVE, "negative"}, {BO_FX_NEGATIVE_SHINE, "negative_shine"},
-                    {BO_FX_VOUCHER, "voucher"}, {BO_FX_BOOSTER, "booster"}};
+                    {BO_FX_VOUCHER, "voucher"}, {BO_FX_BOOSTER, "booster"},
+                    {BO_FX_BACKGROUND, "background"}};
     int loaded = 0;
     for (size_t i = 0; i < sizeof(kEffects) / sizeof(kEffects[0]); i++) {
         char path[96];
@@ -1766,6 +1770,82 @@ static void count_to(double *shown, double value, double dt) {
     }
 }
 
+static BOColor scale_colour(BOColor c, float f) {
+    BOColor out = {c.r * f, c.g * f, c.b * f, c.a};
+    return out;
+}
+
+static BOColor mix_colour(BOColor a, BOColor b, float part_a) {
+    BOColor out = {a.r * part_a + b.r * (1 - part_a), a.g * part_a + b.g * (1 - part_a),
+                   a.b * part_a + b.b * (1 - part_a), a.a * part_a + b.a * (1 - part_a)};
+    return out;
+}
+
+static void approach_colour(BOColor *c, BOColor target, float k) {
+    c->r += (target.r - c->r) * k;
+    c->g += (target.g - c->g) * k;
+    c->b += (target.b - c->b) * k;
+    c->a += (target.a - c->a) * k;
+}
+
+// ease_background_colour_blind: the colours of the background for the state
+// of the run, which the background moves to in about 0.6 seconds.
+static void update_background(double dt) {
+    BORun *run = G.run;
+    BOColor black = bo_rgb(0x374244), darkBlack = scale_colour(bo_rgb(0x374244), 0.8f);
+    BOColor newColour = bo_rgb(0x50846e), special = {0, 0, 0, 0}, tertiary = {0, 0, 0, 0};
+    int hasSpecial = 0, hasTertiary = 0;
+    float contrast = 1, spin = 0;
+    const BOCenterInfo *pack = run->state == BO_STATE_PACK ? bo_center(run->pack) : NULL;
+    const char *kind = pack && pack->kind ? pack->kind : "";
+    const BOBlindInfo *blind = bo_blind_info(run->blind);
+    if (pack && strcmp(kind, "Arcana") == 0) {
+        newColour = bo_rgb(0x8867a5), special = darkBlack, hasSpecial = 1, contrast = 1.5f;
+    } else if (pack && strcmp(kind, "Spectral") == 0) {
+        newColour = bo_rgb(0x4584fa), special = darkBlack, hasSpecial = 1, contrast = 2;
+    } else if (pack && strcmp(kind, "Standard") == 0) {
+        newColour = darkBlack, special = bo_rgb(0xfe5f55), hasSpecial = 1, contrast = 3;
+    } else if (pack && strcmp(kind, "Buffoon") == 0) {
+        newColour = bo_rgb(0xff9a00), special = black, hasSpecial = 1, contrast = 2;
+    } else if (pack) {
+        newColour = black, contrast = 3;
+    } else if (run->won && G.endless == 0) {
+        newColour = bo_rgb(0x4f6367);
+    } else if (run->state == BO_STATE_SELECTING && blind->boss) {
+        if (blind->showdown) {
+            newColour = bo_rgb(0x009dff), special = bo_rgb(0xfe5f55), tertiary = scale_colour(black, 0.6f);
+            hasSpecial = hasTertiary = 1;
+            contrast = 3;
+            spin = 0.5f;
+        } else {
+            BOColor boss = bo_rgb(blind->colour);
+            BOColor mixed = mix_colour(boss, black, 0.3f);
+            newColour = (BOColor){mixed.r * 0.9f + 0.1f, mixed.g * 0.9f + 0.1f, mixed.b * 0.9f + 0.1f, 1};
+            special = boss, hasSpecial = 1, contrast = 2;
+            spin = 0.25f;
+        }
+    }
+    BOColor targetL, targetC, targetD;
+    if (hasSpecial && hasTertiary) {
+        targetL = newColour, targetC = special, targetD = tertiary;
+    } else {
+        targetL = scale_colour(newColour, 1.3f);
+        targetD = scale_colour(newColour, hasSpecial ? 0.4f : 0.7f);
+        targetC = hasSpecial ? special : scale_colour(newColour, 0.9f);
+    }
+    targetL.a = targetC.a = targetD.a = 1;
+    if (G.backContrast == 0) {
+        G.backL = targetL, G.backC = targetC, G.backD = targetD, G.backContrast = contrast;
+    }
+    float k = (float)(1 - exp(-dt * 6));
+    approach_colour(&G.backL, targetL, k);
+    approach_colour(&G.backC, targetC, k);
+    approach_colour(&G.backD, targetD, k);
+    G.backContrast += (contrast - G.backContrast) * k;
+    G.backSpin += (spin - G.backSpin) * (float)(1 - exp(-dt * 2));
+    G.backSpinTime += (float)dt * G.backSpin;
+}
+
 void bo_game_frame(double dt) {
     bo_debug_poll(dt);
     G.time += dt;
@@ -1807,6 +1887,8 @@ void bo_game_frame(double dt) {
         G.handCount = 0;
     }
     bo_ui_begin();
+    update_background(dt);
+    bo_gfx_set_background((float)G.time, G.backSpinTime, G.backC, G.backL, G.backD, G.backContrast, G.backSpin);
     bo_gfx_begin(G.width, G.height, bo_rgb(0x3a5c4f));
     // A tap on the table takes the focus away.
     bo_ui_area(BO_ID_BACKGROUND, bo_rect(0, 0, G.width, G.height));

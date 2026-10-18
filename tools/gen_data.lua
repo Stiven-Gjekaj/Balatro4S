@@ -185,6 +185,9 @@ typedef struct {
 const BOCenterInfo *bo_center(BOCenterId id);
 BOCenterId bo_center_by_key(const char *key);
 
+// The name of a field as in game.lua, as "extra_odds".
+const char *bo_field_name(BOField field);
+
 // A config value by field. has gets 0 when the center has no such field.
 double bo_center_number(const BOCenterInfo *center, BOField field, int *has);
 const char *bo_center_text(const BOCenterInfo *center, BOField field);
@@ -208,6 +211,9 @@ for i, center in ipairs(list) do
         c:write('};\n')
     end
 end
+c:write('\nstatic const char *kFieldNames[BO_FIELD_COUNT] = {\n')
+for _, f in ipairs(field_list) do c:write('    ' .. c_string(f) .. ',\n') end
+c:write('};\n\nconst char *bo_field_name(BOField field) {\n    return field < BO_FIELD_COUNT ? kFieldNames[field] : "";\n}\n')
 c:write('\nstatic const BOCenterInfo kCenters[BO_CENTER_COUNT] = {\n')
 local set_enum = {Default = 'BO_SET_DEFAULT', Enhanced = 'BO_SET_ENHANCED', Edition = 'BO_SET_EDITION',
                   Joker = 'BO_SET_JOKER', Tarot = 'BO_SET_TAROT', Planet = 'BO_SET_PLANET',

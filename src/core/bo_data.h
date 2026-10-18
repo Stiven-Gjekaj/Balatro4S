@@ -457,6 +457,9 @@ typedef struct {
 const BOCenterInfo *bo_center(BOCenterId id);
 BOCenterId bo_center_by_key(const char *key);
 
+// The name of a field as in game.lua, as "extra_odds".
+const char *bo_field_name(BOField field);
+
 // A config value by field. has gets 0 when the center has no such field.
 double bo_center_number(const BOCenterInfo *center, BOField field, int *has);
 const char *bo_center_text(const BOCenterInfo *center, BOField field);

@@ -1547,6 +1547,14 @@ static void draw_setup(void) {
     // A locked deck shows the locked back at (4, 0).
     draw_cell(&G.centers, 7, 5, locked ? 4 : back->pos_x, locked ? 0 : back->pos_y, cx, cy, cw, ch,
               bo_rgb(BO_C_WHITE));
+    // get_deck_win_sticker: the sticker of the highest stake that the deck
+    // won, from shared_stickers in stickers.png.
+    int bestWin = G.profile && !locked ? bo_profile_deck_win_stake(G.profile, G.setupBack) : 0;
+    if (bestWin > 0) {
+        static const int stickerPos[8][2] = {{1, 0}, {2, 0}, {3, 0}, {0, 1}, {4, 0}, {1, 1}, {2, 1}, {3, 1}};
+        draw_cell(&G.stickers, 5, 3, stickerPos[bestWin - 1][0], stickerPos[bestWin - 1][1], cx, cy, cw, ch,
+                  bo_rgb(BO_C_WHITE));
+    }
     float aw = G.width * 0.06f, ah = ch * 0.4f;
     if (bo_ui_button(BO_ID_SETUP_PREV, bo_rect(cx - aw - 14, cy + (ch - ah) / 2, aw, ah), BO_C_RED, "<", 1)) {
         G.setupBack = G.setupBack == BO_B_RED ? BO_B_ERRATIC : G.setupBack - 1;
@@ -2557,6 +2565,10 @@ void bo_game_debug(const char *line) {
             if (strcmp(word, "rental") == 0) joker->rental = 1;
         }
         fprintf(stderr, "debug: sticker %s\n", word);
+    } else if (strncmp(line, "profile win", 11) == 0) {
+        // The profile counts a win of the deck and the stake of this run.
+        bo_profile_win(G.run);
+        fprintf(stderr, "debug: profile win\n");
     } else if (sscanf(line, "stake %lf", &value) == 1) {
         // The stake of the next run.
         if (value >= 1 && value <= 8) G.setupStake = (int)value;

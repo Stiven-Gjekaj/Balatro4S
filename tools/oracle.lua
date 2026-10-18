@@ -11,6 +11,7 @@
 --   bosses SEED ANTES     print the boss of each ante from 1 to ANTES
 --   string SEED           print random_string(8, SEED), a new seed of a run
 --   gen OUTPUT_DIR        write bo_data.h and bo_data.c (tools/gen_data.lua)
+--   score FILE            play the hand of a scenario file (tools/scenario.lua)
 --   deck SEED KEY...      print the deck from the top after each shuffle KEY
 
 local dir, command = arg[1], arg[2]
@@ -61,6 +62,8 @@ elseif command == 'bosses' then
         out[#out + 1] = get_new_boss()
     end
     print(table.concat(out, ' '))
+elseif command == 'score' then
+    dofile((arg[0]:gsub('oracle%.lua$', 'scenario.lua')))
 elseif command == 'gen' then
     dofile((arg[0]:gsub('oracle%.lua$', 'gen_data.lua')))
 elseif command == 'string' then

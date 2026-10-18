@@ -8,12 +8,13 @@ Objective-C, with OpenGL ES 2.0. You install it as a .deb package.
 
 This is a fan project. It is not from LocalThunk or Playstack.
 
-**The status:** early work. Version 0.1.0 deals a hand, finds the poker
-hand, and scores it. A full run is not playable yet. The plan is in
+**The status:** early work. Version 0.2.0 plays a full run of 8 antes with
+the standard deck, with the seeds of Balatro. The shop, the jokers, and the
+other cards come in the next versions. The plan is in
 [TODO.md](TODO.md), and the decisions and their reasons are in
 [docs/decisions.md](docs/decisions.md).
 
-<img src="assets/screenshots/table.png" width="480" alt="The table: the side panel with the round score, the hand, and the hands and discards that are left; eight cards in the hand; the deck; and the Play Hand and Discard buttons">
+<img src="assets/screenshots/blinds.png" width="400" alt="The blind select: the Small Blind is defeated, the Big Blind waits with a Select button, and the boss The Pillar is upcoming"> <img src="assets/screenshots/table.png" width="400" alt="A round: the blind and its target in the side panel, eight cards in the hand, the Play Hand and Discard buttons, and the sort buttons">
 
 ## You need a copy of Balatro
 
@@ -35,7 +36,7 @@ Balatro4S follows Balatro 1.0.1o.
 1. Download the .deb from the latest
    [release](https://github.com/Stiven-Gjekaj/Balatro4S/releases).
 2. Copy it to the phone, for example with `scp`.
-3. Install it as root: `dpkg -i io.github.stivengjekaj.balatro4s_0.1.0_iphoneos-arm.deb`.
+3. Install it as root: `dpkg -i io.github.stivengjekaj.balatro4s_0.2.0_iphoneos-arm.deb`.
 
 The APT of Cydia on iOS 6 speaks only TLS 1.0, and GitHub accepts only TLS
 1.2, so `dpkg -i` is the way on iOS 6.

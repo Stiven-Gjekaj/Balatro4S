@@ -30,6 +30,7 @@
 #include "bo_profile.h"
 #include "bo_save.h"
 #include "bo_score.h"
+#include "bo_audio.h"
 #include "bo_sound.h"
 #include "bo_ui.h"
 #include "bo_voucher.h"
@@ -2845,8 +2846,9 @@ void bo_game_frame(double dt) {
         if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &infoCount) == KERN_SUCCESS) {
             megabytes = info.resident_size / 1048576.0;
         }
-        fprintf(stderr, "fps %.1f, draw calls %d, memory %.1f MB\n", G.frames / (G.time - G.fpsTime),
-                bo_gfx_draw_calls(), megabytes);
+        fprintf(stderr, "fps %.1f, draw calls %d, memory %.1f MB, voices %d, audio %.1f s\n",
+                G.frames / (G.time - G.fpsTime), bo_gfx_draw_calls(), megabytes, bo_sound_voices(),
+                bo_sound_rendered() / (double)BO_AUDIO_RATE);
         fflush(stderr);
         G.frames = 0;
         G.fpsTime = G.time;

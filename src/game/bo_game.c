@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "bo_blind.h"
+#include "bo_boss.h"
 #include "bo_card.h"
 #include "bo_debug.h"
 #include "bo_describe.h"
@@ -227,6 +228,8 @@ static void layout(void) {
 
 // Makes the cards on the screen follow the hand of the run. A card that
 // stays keeps its place, and a new card comes from the deck.
+static void update_preview(void);
+
 static void sync_hand(void) {
     BOCardView views[BO_MAX_HAND];
     int count = 0;
@@ -243,10 +246,13 @@ static void sync_hand(void) {
                 break;
             }
         }
+        // Cerulean Bell: the forced card stays selected.
+        if (view.card.forced_selection) view.selected = 1;
         views[count++] = view;
     }
     memcpy(G.hand, views, sizeof(BOCardView) * count);
     G.handCount = count;
+    if (G.flow == BO_FLOW_IDLE) update_preview();
     layout();
 }
 
@@ -397,6 +403,11 @@ static void draw_shadow(float x, float y, float w, float h) {
 
 static void draw_playing_card(const BOCard *card, float x, float y, float w, float h) {
     draw_shadow(x, y, w, h);
+    if (card->face_down) {
+        // The Red Deck back, at (0, 0) in Enhancers.png.
+        draw_cell(&G.centers, 7, 5, 0, 0, x, y, w, h, bo_rgb(BO_C_WHITE));
+        return;
+    }
     const BOCenterInfo *center = bo_center(bo_rules_enhancement_center(card->enhancement));
     BOColor white = bo_rgb(BO_C_WHITE);
     draw_cell(&G.centers, 7, 5, center->pos_x, center->pos_y, x, y, w, h, white);
@@ -420,6 +431,10 @@ static void draw_item(const BOItem *item, float x, float y, float w, float h) {
     const BOCenterInfo *c = bo_item_center(item);
     if (!c) return;
     draw_shadow(x, y, w, h);
+    if (item->face_down) {
+        draw_cell(&G.centers, 7, 5, 0, 0, x, y, w, h, bo_rgb(BO_C_WHITE));
+        return;
+    }
     BOColor white = bo_rgb(BO_C_WHITE);
     switch (c->set) {
     case BO_SET_JOKER:
@@ -767,6 +782,16 @@ static void update_preview(void) {
     G.shownHand = bo_hand_name(result.type, result.royal);
     G.shownChips = bo_hand_level_chips(result.type, G.run->hands[result.type].level);
     G.shownMult = bo_hand_level_mult(result.type, G.run->hands[result.type].level);
+    // CardArea:parse_highlighted: a boss can refuse the hand.
+    if (bo_boss_debuff_hand(G.run, count, &result, result.type, 1)) {
+        G.shownHand = "Not Allowed!";
+        G.shownChips = 0;
+        G.shownMult = 0;
+    }
+    // get_poker_hand_info: a card face down hides the hand.
+    for (int i = 0; i < count; i++) {
+        if (cards[i].face_down) G.shownHand = "????";
+    }
 }
 
 static void play_selected(void) {
@@ -985,6 +1010,7 @@ static void handle_hand_taps(void) {
         // selected.
         if (G.focus != BO_FOCUS_CONSUMABLE && G.focus != BO_FOCUS_PACK_CARD) G.focus = BO_FOCUS_NONE;
         if (!G.hand[i].selected && count >= BO_MAX_PLAY) break;
+        if (G.hand[i].card.forced_selection) break;
         G.hand[i].selected = !G.hand[i].selected;
         update_preview();
         layout();
@@ -993,12 +1019,28 @@ static void handle_hand_taps(void) {
 }
 
 static void clear_selection(void) {
-    for (int i = 0; i < G.handCount; i++) G.hand[i].selected = 0;
+    for (int i = 0; i < G.handCount; i++) G.hand[i].selected = G.hand[i].card.forced_selection;
     update_preview();
     layout();
 }
 
+// The text of the boss of the round, over the empty play area.
+static void draw_boss_text(void) {
+    BORun *run = G.run;
+    if (!bo_blind_info(run->blind)->boss || run->blind_disabled || G.playCount > 0) return;
+    BODescription d;
+    if (!bo_describe_blind(run, run->blind, &d)) return;
+    BORect area = main_area();
+    float lh = G.height * 0.04f, y = G.height * 0.33f;
+    bo_font_draw(d.name, area.x + area.w / 2, y, lh * 1.2f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    for (int l = 0; l < d.line_count; l++) {
+        bo_rich_draw(d.lines[l], area.x + area.w / 2, y + lh * 1.5f + l * lh * 1.1f, lh, bo_rgba(BO_C_WHITE, 0.8f),
+                     BO_ALIGN_CENTER);
+    }
+}
+
 static void draw_round(void) {
+    if (G.run->state == BO_STATE_SELECTING && G.flow == BO_FLOW_IDLE) draw_boss_text();
     draw_hand_cards(G.flow == BO_FLOW_IDLE && G.run->state == BO_STATE_SELECTING);
     for (int i = 0; i < G.playCount; i++) draw_view(&G.play[i]);
     draw_hand_controls();
@@ -1053,6 +1095,14 @@ static void draw_blind_select(void) {
         snprintf(text, sizeof(text), "Reward: %.*s", dollars, "$$$$$$$$$$");
         bo_font_draw(dollars ? text : "No reward", x + colW / 2, y + G.height * 0.12f, G.height * 0.035f,
                      bo_rgb(BO_C_MONEY), BO_ALIGN_CENTER);
+        if (info->boss) {
+            BODescription d;
+            bo_describe_blind(run, blind, &d);
+            float ly = y + G.height * 0.18f, lh = G.height * 0.032f;
+            for (int l = 0; l < d.line_count; l++) {
+                bo_rich_draw(d.lines[l], x + colW / 2, ly + l * lh * 1.1f, lh, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+            }
+        }
         if (!current) bo_gfx_rect(box.x, box.y, box.w, box.h, bo_rgba(0x000000, 0.35f));
         // Director's Cut and Retcon: a new boss for $10.
         if (slot == BO_SLOT_BOSS && (run->used_vouchers[BO_V_DIRECTORS_CUT] || run->used_vouchers[BO_V_RETCON])) {

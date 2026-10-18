@@ -90,7 +90,7 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
   is in `src/third_party`.
 - Play the 5 music tracks, with the changes between the shop, the packs, and the blinds.
 
-## 1.0.0
+## 1.0.0 (done, 2026-10-18)
 
 - Compare all the content with Balatro 1.0.1o, and fix each difference.
 - Publish the release on GitHub with the .deb, and add it to the Cydia repository.

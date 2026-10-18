@@ -30,6 +30,10 @@ int bo_describe_item(const struct BORun *run, const BOItem *item, BODescription 
 // The name and the text of a blind, as BO_BL_OX.
 int bo_describe_blind(const struct BORun *run, int blind, BODescription *out);
 
+// The name and the text of a tag. orbital_hand is the hand of an Orbital
+// Tag.
+int bo_describe_tag(const struct BORun *run, int tag, int orbital_hand, BODescription *out);
+
 // A word of the dictionary of misc, as "k_mult", or the key itself.
 const char *bo_describe_word(const char *key);
 

@@ -405,3 +405,57 @@ int bo_describe_blind(const BORun *run, int blind, BODescription *out) {
     }
     return 1;
 }
+
+int bo_describe_tag(const BORun *run, int tag, int orbital_hand, BODescription *out) {
+    memset(out, 0, sizeof(*out));
+    const BOCenterInfo *c = bo_center((BOCenterId)tag);
+    if (!c) return 0;
+    snprintf(out->name, sizeof(out->name), "%s", c->name);
+    if (!gText) return 0;
+    char path[128];
+    snprintf(path, sizeof(path), "descriptions.Tag.%s", c->key);
+    BOLuaValue *entry = bo_luatab_path(gText, path);
+    if (!entry) return 0;
+    const char *name = bo_luatab_string(entry, "name");
+    if (name) snprintf(out->name, sizeof(out->name), "%s", name);
+    // The loc_vars of Tag:get_uibox_table.
+    BOVars vars;
+    memset(&vars, 0, sizeof(vars));
+    switch (tag) {
+    case BO_TAG_INVESTMENT: var_number(&vars, bo_center_number(c, BO_F_DOLLARS, NULL)); break;
+    case BO_TAG_HANDY: {
+        double per = bo_center_number(c, BO_F_DOLLARS_PER_HAND, NULL);
+        var_number(&vars, per);
+        var_number(&vars, per * (run ? run->hands_played_total : 0));
+        break;
+    }
+    case BO_TAG_GARBAGE: {
+        double per = bo_center_number(c, BO_F_DOLLARS_PER_DISCARD, NULL);
+        var_number(&vars, per);
+        var_number(&vars, per * (run ? run->unused_discards : 0));
+        break;
+    }
+    case BO_TAG_JUGGLE: var_number(&vars, c->h_size); break;
+    case BO_TAG_TOP_UP: var_number(&vars, bo_center_number(c, BO_F_SPAWN_JOKERS, NULL)); break;
+    case BO_TAG_SKIP: {
+        double bonus = bo_center_number(c, BO_F_SKIP_BONUS, NULL);
+        var_number(&vars, bonus);
+        var_number(&vars, bonus * ((run ? run->skips : 0) + 1));
+        break;
+    }
+    case BO_TAG_ORBITAL:
+        var_text(&vars, poker_hand(orbital_hand));
+        var_number(&vars, bo_center_number(c, BO_F_LEVELS, NULL));
+        break;
+    case BO_TAG_ECONOMY: var_number(&vars, bo_center_number(c, BO_F_MAX, NULL)); break;
+    default: break;
+    }
+    BOLuaValue *text = bo_luatab_get(entry, "text");
+    int lines = bo_luatab_length(text);
+    for (int i = 0; i < lines && out->line_count < BO_DESCRIBE_LINES; i++) {
+        BOLuaValue *line = bo_luatab_item(text, i);
+        if (!line || line->type != BO_LUA_STRING) continue;
+        fill_line(line->string, &vars, out->lines[out->line_count++], BO_DESCRIBE_LINE_LENGTH);
+    }
+    return 1;
+}

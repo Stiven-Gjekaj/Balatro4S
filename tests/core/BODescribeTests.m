@@ -98,3 +98,21 @@ BO_TEST(test_describe_writes_the_text_of_a_boss) {
     bo_luatab_free(text);
     free(run);
 }
+
+BO_TEST(test_describe_writes_the_text_of_a_tag) {
+    BOLuaValue *text = bo_luatab_parse(
+        "return { descriptions = { Tag = { tag_skip = { name = 'Skip Tag', text = { '$#1# per skip', '(Will give $#2#)' } } } } }");
+    bo_describe_set_text(text);
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    run->skips = 2;
+    BODescription d;
+    BO_EXPECT(bo_describe_tag(run, BO_TAG_SKIP, BO_HAND_HIGH_CARD, &d));
+    BO_EQUAL(@(d.name), @"Skip Tag");
+    BO_EQUAL(@(d.lines[0]), @"$5 per skip");
+    // The skip of this blind counts too.
+    BO_EQUAL(@(d.lines[1]), @"(Will give $15)");
+    bo_describe_set_text(NULL);
+    bo_luatab_free(text);
+    free(run);
+}

@@ -8,6 +8,7 @@
 --   random SEED N         print N values of math.random() after randomseed(SEED)
 --   shuffle SEED N        print the shuffle of 1..N with pseudoshuffle
 --   bosses SEED ANTES     print the boss of each ante from 1 to ANTES
+--   deck SEED KEY...      print the deck from the top after each shuffle KEY
 
 local dir, command = arg[1], arg[2]
 G = {GAME = {pseudorandom = {}}, CONTROLLER = {}}
@@ -57,6 +58,22 @@ elseif command == 'bosses' then
         out[#out + 1] = get_new_boss()
     end
     print(table.concat(out, ' '))
+elseif command == 'deck' then
+    -- The cards in the order of start_run: sorted by suit, then rank, as
+    -- strings. Each card gets the next sort_id.
+    start(arg[3])
+    local protos = {}
+    for k, v in pairs(game_table('P_CARDS')) do protos[#protos + 1] = {s = k:sub(1, 1), r = k:sub(3, 3)} end
+    table.sort(protos, function(a, b) return a.s .. a.r < b.s .. b.r end)
+    local deck = {}
+    for i, p in ipairs(protos) do deck[i] = {sort_id = i, name = p.r .. p.s} end
+    for i = 4, #arg do
+        pseudoshuffle(deck, pseudoseed(arg[i]))
+        local out = {}
+        -- The top of the deck is the end of the list.
+        for j = #deck, 1, -1 do out[#out + 1] = deck[j].name end
+        print(table.concat(out, ' '))
+    end
 elseif command == 'shuffle' then
     local list = {}
     for i = 1, tonumber(arg[4]) do list[i] = {v = i} end

@@ -102,7 +102,7 @@ enum {
     BO_ID_COL_NEXT,
     BO_ID_COL_TAB = 600,   // A tab of the collection.
     BO_ID_COL_CARD = 620,  // A card of the collection page.
-    BO_ID_BACKGROUND,  // A tap on nothing: the focus goes away.
+    BO_ID_BACKGROUND = 700,  // A tap on nothing: the focus goes away.
     BO_ID_HAND_CARD = 100,
     BO_ID_JOKER = 200,
     BO_ID_CONSUMABLE = 300,

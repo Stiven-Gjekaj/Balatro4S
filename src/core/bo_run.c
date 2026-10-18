@@ -455,7 +455,8 @@ void bo_run_end_round(BORun *run) {
 
     // evaluate_round: the money of the round.
     memset(&run->eval, 0, sizeof(run->eval));
-    add_eval_row(run, BO_EVAL_BLIND, 0, 0, run->blind_dollars);
+    // Mr. Bones saved the run: the blind gives no money.
+    add_eval_row(run, BO_EVAL_BLIND, 0, 0, run->chips >= run->blind_chips ? run->blind_dollars : 0);
     if (run->hands_left > 0) add_eval_row(run, BO_EVAL_HANDS, 0, run->hands_left, run->hands_left);
     for (int i = 0; i < run->joker_count; i++) {
         int has = 0;

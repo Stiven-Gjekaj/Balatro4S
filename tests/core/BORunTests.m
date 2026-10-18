@@ -4,6 +4,7 @@
 #import "BOTest.h"
 #include <stdlib.h>
 #include <string.h>
+#include "bo_pool.h"
 #include "bo_rules.h"
 #include "bo_run.h"
 
@@ -40,6 +41,21 @@ BO_TEST(test_run_first_ancient_suit_can_be_spades) {
     // start_run clears the suit of Ancient Joker before its first pick, so
     // the pick has the four suits. Balatro picks Spades for this seed.
     BO_EQUAL_INT(run->ancient_suit, BO_SPADES);
+    free(run);
+}
+
+BO_TEST(test_run_mr_bones_saves_the_run_with_no_blind_money) {
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    BOItem bones = bo_pool_make_item(run, BO_J_MR_BONES);
+    bo_run_add_joker(run, &bones);
+    bo_run_select_blind(run);
+    run->hands_left = 0;
+    run->chips = run->blind_chips / 2;
+    bo_run_end_round(run);
+    BO_EQUAL_INT(run->state, BO_STATE_ROUND_EVAL);
+    BO_EQUAL_INT(run->eval.rows[0].kind, BO_EVAL_BLIND);
+    BO_EQUAL_INT(run->eval.rows[0].dollars, 0);
     free(run);
 }
 

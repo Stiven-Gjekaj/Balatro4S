@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "bo_font.h"
+#include "bo_sound.h"
 
 #define BO_UI_MAX_AREAS 128
 
@@ -77,7 +78,10 @@ int bo_ui_button(int id, BORect r, unsigned int color, const char *label, int en
     bo_font_draw(label, r.x + r.w / 2, r.y + (r.h - size) / 2, size, bo_rgb(0xffffff), BO_ALIGN_CENTER);
     if (!enabled) return 0;
     bo_ui_area(id, r);
-    return bo_ui_clicked(id);
+    if (!bo_ui_clicked(id)) return 0;
+    // The click of a UIElement button.
+    bo_sound_play("button", 1, 0.3f);
+    return 1;
 }
 
 void bo_ui_box(BORect r, unsigned int color) {

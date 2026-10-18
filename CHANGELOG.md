@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0 (2026-10-18)
+
+- The 15 decks and the 8 stakes, with the Eternal, Perishable, and Rental
+  stickers. A setup screen chooses the deck and the stake of a new run.
+  The start of a run with each deck and stake agrees with Balatro.
+- The run saves itself and goes on after a restart.
+- The profile counts the stats and the wins of each deck, and unlocks the
+  decks, the stakes, the jokers, and the vouchers as Balatro does. A banner
+  shows each unlock. Unlock All needs a second tap.
+- The collection shows the jokers, decks, vouchers, Tarot, Planet, and
+  Spectral cards, packs, tags, and blinds that the profile discovered.
+- Fix: the first suit of Ancient Joker can be Spades.
+- Fix: each Investment Tag pays its own row of money.
+- Fix: the blind pays no money when Mr. Bones saves the run.
+
 ## 0.7.0 (2026-10-18)
 
 - The moving background of Balatro, in the colours of the blind and the

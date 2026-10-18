@@ -85,7 +85,8 @@ void bo_run_sort_hand(BORun *run, int by_suit) {
 }
 
 static void draw_to_hand(BORun *run) {
-    int space = run->hand_size - run->hand_count;
+    int limit = run->hand_size > 0 ? run->hand_size : 0;
+    int space = limit - run->hand_count;
     if (space > run->deck_count) space = run->deck_count;
     for (int i = 0; i < space && run->hand_count < BO_MAX_HAND; i++) {
         run->hand[run->hand_count++] = run->deck[--run->deck_count];

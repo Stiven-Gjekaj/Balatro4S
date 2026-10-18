@@ -133,8 +133,16 @@ int bo_rules_count_rank(const BORun *run, int rank) {
 }
 
 void bo_rules_change_hand_size(BORun *run, int delta) {
+    // hand_size is real_card_limit, which can go below 0. The limit that
+    // the hand uses is never below 0.
     run->hand_size += delta;
-    if (run->hand_size < 0) run->hand_size = 0;
+    // A bigger hand draws its new cards at once while the hand is on.
+    if (delta > 0 && run->hand_size > 1 && run->hand_count > 0 && run->state == BO_STATE_SELECTING) {
+        for (int i = 0; i < delta && run->deck_count > 0 && run->hand_count < BO_MAX_HAND; i++) {
+            run->hand[run->hand_count++] = run->deck[--run->deck_count];
+        }
+        bo_run_sort_hand(run, run->sort_by_suit);
+    }
 }
 
 void bo_rules_set_cost(BORun *run, BOItem *item) {

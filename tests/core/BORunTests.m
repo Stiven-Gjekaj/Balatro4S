@@ -2,7 +2,9 @@
 // 1.0.1o in the LuaJIT of Balatro.app, with tools/oracle.sh.
 
 #import "BOTest.h"
+#include <stdlib.h>
 #include <string.h>
+#include "bo_rules.h"
 #include "bo_run.h"
 
 static NSString *names(const BOCard *cards, int count, int fromTop) {
@@ -126,5 +128,28 @@ BO_TEST(test_run_sorts_the_hand_by_suit) {
     bo_run_select_blind(run);
     bo_run_sort_hand(run, 1);
     BO_EQUAL(names(run->hand, run->hand_count, 0), @"7S 2S 8H 7H 3H 2H KC 8D");
+    free(run);
+}
+
+BO_TEST(test_run_a_bigger_hand_draws_while_the_hand_is_on) {
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    bo_run_select_blind(run);
+    BO_EQUAL_INT(run->hand_count, 8);
+    // CardArea:change_size draws the new cards at once, and sorts the hand.
+    bo_rules_change_hand_size(run, 2);
+    BO_EQUAL_INT(run->hand_count, 10);
+    BO_EQUAL_INT(run->deck_count, 42);
+    for (int i = 1; i < run->hand_count; i++) {
+        BO_EXPECT(bo_card_nominal_key(&run->hand[i - 1], 0) > bo_card_nominal_key(&run->hand[i], 0));
+    }
+    // A smaller hand keeps its cards, and the limit does not go below 0.
+    bo_rules_change_hand_size(run, -12);
+    BO_EQUAL_INT(run->hand_count, 10);
+    BO_EQUAL_INT(run->hand_size, -2);
+    // With no hand on, a bigger hand draws nothing.
+    run->state = BO_STATE_SHOP;
+    bo_rules_change_hand_size(run, 5);
+    BO_EQUAL_INT(run->hand_count, 10);
     free(run);
 }

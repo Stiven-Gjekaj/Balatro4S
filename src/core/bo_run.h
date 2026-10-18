@@ -95,7 +95,7 @@ typedef struct BORun {
     int discards_left;
     int hands_played;      // In this round.
     int discards_used;     // In this round.
-    int hand_size;         // G.hand.config.card_limit.
+    int hand_size;         // G.hand.config.real_card_limit. It can be below 0.
     int reroll_cost_base;  // round_resets.reroll_cost.
     int reroll_cost;       // current_round.reroll_cost.
     int reroll_cost_increase;

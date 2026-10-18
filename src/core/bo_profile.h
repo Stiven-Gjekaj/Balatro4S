@@ -69,6 +69,8 @@ typedef struct {
         int losses[BO_STAKE_COUNT];
     } decks[BO_DECK_COUNT];
     int hand_usage[BO_HAND_COUNT];  // The plays of each poker hand.
+    uint8_t challenges_completed[24];  // challenge_progress.completed, by index.
+    int challenges_unlocked;           // The challenges that the player can start.
     int blank_redeems;              // voucher_usage.v_blank.count.
     // The cards that this profile unlocked, for the alerts of the screen.
     BOCenterId notices[BO_PROFILE_NOTICES];
@@ -173,6 +175,10 @@ void bo_profile_discover_tallies(const BOProfile *profile, int *total, int *of, 
 
 // The start of a run: the deck counts one more run.
 void bo_profile_start_run(BORun *run);
+
+// The challenges that the player can start: challenges_unlocked, or all
+// with Unlock All.
+int bo_profile_challenges_open(const BOProfile *profile);
 
 // The end of a run: win_game or the loss of game_over.
 void bo_profile_win(BORun *run);

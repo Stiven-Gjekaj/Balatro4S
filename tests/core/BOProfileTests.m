@@ -186,3 +186,35 @@ BO_TEST(test_profile_play_and_round_count_the_stats) {
     BO_EXPECT(p->stats[BO_STAT_DOLLARS_EARNED] > 0);
     done(p, run);
 }
+
+BO_TEST(test_profile_challenge_counts_nothing_and_records_its_win) {
+    BOProfile *p = new_profile();
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start_challenge(run, "ABCDEFGH", 2);
+    bo_profile_stat(run, BO_STAT_CARDS_SOLD, 60);
+    BO_EQUAL_INT((int)p->stats[BO_STAT_CARDS_SOLD], 0);
+    BO_EXPECT(!p->unlocked[BO_J_BURNT]);
+    BO_EXPECT(!p->discovered[BO_V_SEED_MONEY]);
+    // High scores count in a challenge too.
+    bo_profile_high_score(BO_HIGH_HAND, 500);
+    BO_EQUAL_INT((int)p->high_scores[BO_HIGH_HAND], 500);
+    BO_EQUAL_INT(bo_profile_challenges_open(p), 0);
+    bo_profile_win(run);
+    BO_EXPECT(p->challenges_completed[2]);
+    BO_EQUAL_INT(p->decks[0].wins[0], 0);
+    done(p, run);
+}
+
+BO_TEST(test_profile_five_deck_wins_open_five_challenges) {
+    BOProfile *p = new_profile();
+    BORun *run = calloc(1, sizeof(BORun));
+    for (int d = 0; d < 5; d++) {
+        bo_run_start_deck(run, "ABCDEFGH", (BOCenterId)(BO_B_RED + d), 1);
+        bo_profile_win(run);
+    }
+    BO_EQUAL_INT(bo_profile_challenges_open(p), 5);
+    bo_run_start_challenge(run, "ABCDEFGH", 0);
+    bo_profile_win(run);
+    BO_EQUAL_INT(bo_profile_challenges_open(p), 6);
+    done(p, run);
+}

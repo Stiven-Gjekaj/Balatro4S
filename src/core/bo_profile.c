@@ -5,11 +5,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bo_challenge_data.h"
 #include "bo_eval.h"
 #include "bo_hand.h"
 #include "bo_rules.h"
 
 static BOProfile *gActive;
+
+// A challenge counts no stat, unlocks no card, and discovers no card, as
+// inc_career_stat, check_for_unlock, and discover_card.
+static int counting(const BORun *run) {
+    return gActive && !(run && run->challenge);
+}
 
 // The names of career_stats, as the types of the unlock conditions.
 static const char *kStatNames[BO_STAT_COUNT] = {
@@ -293,7 +300,7 @@ static int condition_true(BORun *run, BOProfile *p, BOCenterId id, const BOUnloc
 
 void bo_profile_check(BORun *run, const BOUnlockArgs *args) {
     BOProfile *p = gActive;
-    if (!p) return;
+    if (!counting(run)) return;
     for (int i = 0; i < BO_CENTER_COUNT; i++) {
         if (p->unlocked[i] || !bo_center((BOCenterId)i)->unlock_type) continue;
         if (condition_true(run, p, (BOCenterId)i, args)) unlock(p, (BOCenterId)i);
@@ -301,7 +308,7 @@ void bo_profile_check(BORun *run, const BOUnlockArgs *args) {
 }
 
 void bo_profile_check_cards(BORun *run) {
-    if (!gActive) return;
+    if (!counting(run)) return;
     static const BOUnlockType checks[] = {BO_UNLOCK_MODIFY_DECK, BO_UNLOCK_MODIFY_JOKERS, BO_UNLOCK_HAVE_EDITION,
                                           BO_UNLOCK_MIN_HAND_SIZE};
     for (size_t i = 0; i < sizeof(checks) / sizeof(checks[0]); i++) {
@@ -332,7 +339,7 @@ void bo_profile_play(BORun *run, const BOCard *cards, int count, BOHandType hand
     for (int i = 0; i < count; i++) {
         if (bo_rules_is_face(run, &cards[i], 0)) bo_profile_stat(run, BO_STAT_FACE_CARDS_PLAYED, 1);
     }
-    if (hand >= 0 && hand < BO_HAND_COUNT) p->hand_usage[hand]++;
+    if (hand >= 0 && hand < BO_HAND_COUNT && counting(run)) p->hand_usage[hand]++;
     BOUnlockArgs replays = {.type = BO_UNLOCK_RUN_CARD_REPLAYS};
     bo_profile_check(run, &replays);
     BOUnlockArgs contents = {.type = BO_UNLOCK_HAND_CONTENTS, .cards = cards, .card_count = count};
@@ -346,7 +353,7 @@ void bo_profile_play(BORun *run, const BOCard *cards, int count, BOHandType hand
 }
 
 void bo_profile_discard(BORun *run, const BOCard *cards, int count) {
-    if (!gActive) return;
+    if (!counting(run)) return;
     bo_profile_stat(run, BO_STAT_CARDS_DISCARDED, count);
     BOUnlockArgs args = {.type = BO_UNLOCK_DISCARD_CUSTOM, .cards = cards, .card_count = count};
     bo_profile_check(run, &args);
@@ -362,12 +369,12 @@ void bo_profile_round_won(BORun *run, int interest_steps) {
     }
     if (run->hands_played == 1) {
         bo_profile_stat(run, BO_STAT_SINGLE_HAND_ROUND_STREAK, 1);
-    } else {
+    } else if (counting(run)) {
         p->stats[BO_STAT_SINGLE_HAND_ROUND_STREAK] = 0;
     }
     BOUnlockArgs args = {.type = BO_UNLOCK_ROUND_WIN};
     bo_profile_check(run, &args);
-    if (interest_steps >= 0) {
+    if (interest_steps >= 0 && counting(run)) {
         if (interest_steps == run->interest_cap / 5) {
             p->stats[BO_STAT_ROUND_INTEREST_CAP_STREAK] += 1;
         } else {
@@ -387,7 +394,7 @@ void bo_profile_dollars(BORun *run, int amount) {
 }
 
 void bo_profile_stat(BORun *run, BOStat stat, double amount) {
-    if (!gActive) return;
+    if (!counting(run)) return;
     gActive->stats[stat] += amount;
     BOUnlockArgs args = {.type = BO_UNLOCK_CAREER_STAT, .stat = stat};
     bo_profile_check(run, &args);
@@ -400,7 +407,7 @@ void bo_profile_high_score(BOHighScore score, double amount) {
 
 void bo_profile_discover(BORun *run, BOCenterId center) {
     BOProfile *p = gActive;
-    if (!p || center < 0 || center >= BO_CENTER_COUNT || p->discovered[center]) return;
+    if (!counting(run) || center < 0 || center >= BO_CENTER_COUNT || p->discovered[center]) return;
     p->discovered[center] = 1;
     BOUnlockArgs args = {.type = BO_UNLOCK_DISCOVER_AMOUNT};
     bo_profile_check(run, &args);
@@ -408,7 +415,7 @@ void bo_profile_discover(BORun *run, BOCenterId center) {
 
 void bo_profile_discover_blind(BORun *run, BOBlindId blind) {
     BOProfile *p = gActive;
-    if (!p || p->blind_discovered[blind]) return;
+    if (!counting(run) || p->blind_discovered[blind]) return;
     p->blind_discovered[blind] = 1;
     BOUnlockArgs args = {.type = BO_UNLOCK_BLIND_DISCOVERIES};
     bo_profile_check(run, &args);
@@ -416,10 +423,12 @@ void bo_profile_discover_blind(BORun *run, BOBlindId blind) {
 
 void bo_profile_start_run(BORun *run) {
     BOProfile *p = gActive;
-    if (!p || run->back < BO_B_RED || run->back >= BO_B_RED + BO_DECK_COUNT) return;
+    if (!counting(run) || run->back < BO_B_RED || run->back >= BO_B_RED + BO_DECK_COUNT) return;
     p->decks[run->back - BO_B_RED].count++;
     bo_profile_discover(run, run->back);
 }
+
+static void set_challenge_unlock(BOProfile *p);
 
 // set_deck_win: the stake and all the stakes under it count a win.
 static void set_deck_win(BOProfile *p, BORun *run) {
@@ -429,11 +438,37 @@ static void set_deck_win(BOProfile *p, BORun *run) {
     for (int s = 0; s < run->stake - 1; s++) {
         if (p->decks[d].wins[s] == 0) p->decks[d].wins[s] = 1;
     }
+    set_challenge_unlock(p);
+}
+
+// set_challenge_unlock: 5 challenges open after wins with 5 decks, then one
+// more for each completed challenge.
+static void set_challenge_unlock(BOProfile *p) {
+    if (p->all_unlocked) return;
+    if (p->challenges_unlocked) {
+        int completed = 0;
+        for (int i = 0; i < BO_CHALLENGE_COUNT; i++) completed += p->challenges_completed[i];
+        p->challenges_unlocked = completed + 5 < BO_CHALLENGE_COUNT ? completed + 5 : BO_CHALLENGE_COUNT;
+        return;
+    }
+    int decks = 0;
+    for (int d = 0; d < BO_DECK_COUNT; d++) decks += p->decks[d].wins[0] > 0;
+    if (decks >= 5) p->challenges_unlocked = 5;
+}
+
+int bo_profile_challenges_open(const BOProfile *profile) {
+    if (!profile || profile->all_unlocked) return BO_CHALLENGE_COUNT;
+    return profile->challenges_unlocked;
 }
 
 void bo_profile_win(BORun *run) {
     BOProfile *p = gActive;
     if (!p) return;
+    if (run->challenge) {
+        p->challenges_completed[run->challenge - 1] = 1;
+        set_challenge_unlock(p);
+        return;
+    }
     // win_game: the streaks, the deck, then the checks of state_events.lua.
     bo_profile_high_score(BO_HIGH_WIN_STREAK, p->high_scores[BO_HIGH_CURRENT_STREAK] + 1);
     p->high_scores[BO_HIGH_CURRENT_STREAK] += 1;
@@ -449,7 +484,7 @@ void bo_profile_win(BORun *run) {
 
 void bo_profile_lose(BORun *run) {
     BOProfile *p = gActive;
-    if (!p) return;
+    if (!counting(run)) return;
     p->high_scores[BO_HIGH_CURRENT_STREAK] = 0;
     int d = run->back - BO_B_RED;
     if (d >= 0 && d < BO_DECK_COUNT && run->stake >= 1 && run->stake <= BO_STAKE_COUNT) {

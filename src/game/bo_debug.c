@@ -25,8 +25,16 @@ void bo_debug_poll(double dt) {
     if (!file) return;
     char line[256];
     while (fgets(line, sizeof(line), file)) {
-        float x, y;
-        if (sscanf(line, "tap %f %f", &x, &y) == 2) {
+        float x, y, x2, y2;
+        if (sscanf(line, "drag %f %f %f %f", &x, &y, &x2, &y2) == 4) {
+            // A drag in eight steps, as a finger moves.
+            bo_game_touch(BO_TOUCH_BEGAN, x, y);
+            for (int i = 1; i <= 8; i++) {
+                bo_game_touch(BO_TOUCH_MOVED, x + (x2 - x) * i / 8, y + (y2 - y) * i / 8);
+            }
+            bo_game_touch(BO_TOUCH_ENDED, x2, y2);
+            fprintf(stderr, "debug: drag %.0f %.0f to %.0f %.0f\n", x, y, x2, y2);
+        } else if (sscanf(line, "tap %f %f", &x, &y) == 2) {
             bo_game_touch(BO_TOUCH_BEGAN, x, y);
             bo_game_touch(BO_TOUCH_ENDED, x, y);
             fprintf(stderr, "debug: tap %.0f %.0f\n", x, y);

@@ -82,10 +82,10 @@ void bo_voucher_apply(BORun *run, BOCenterId center) {
     }
 }
 
-int bo_voucher_redeem(BORun *run) {
-    if (!bo_voucher_can_redeem(run)) return 0;
-    BOItem voucher = run->shop_voucher;
-    run->has_shop_voucher = 0;
+// Card:redeem: the voucher is used, paid, and applied.
+static void redeem_item(BORun *run, BOItem voucher) {
+    // Each redeem clears current_round.voucher, so the shop voucher does
+    // not come back in this ante.
     run->voucher = BO_CENTER_NONE;
     run->used_vouchers[voucher.center] = 1;
     bo_run_ease_dollars(run, -voucher.cost);
@@ -98,6 +98,29 @@ int bo_voucher_redeem(BORun *run) {
         bo_joker_calculate(run, &run->jokers[i], &ctx);
     }
     bo_run_forget_card(run, voucher.center);
+}
+
+int bo_voucher_redeem(BORun *run) {
+    if (!bo_voucher_can_redeem(run)) return 0;
+    BOItem voucher = run->shop_voucher;
+    run->has_shop_voucher = 0;
+    redeem_item(run, voucher);
+    return 1;
+}
+
+int bo_voucher_can_redeem_tag(const BORun *run, int index) {
+    if (run->state != BO_STATE_SHOP || index < 0 || index >= run->tag_voucher_count) return 0;
+    int cost = run->tag_vouchers[index].cost;
+    return cost <= bo_run_spendable(run) || cost <= 0;
+}
+
+int bo_voucher_redeem_tag(BORun *run, int index) {
+    if (!bo_voucher_can_redeem_tag(run, index)) return 0;
+    BOItem voucher = run->tag_vouchers[index];
+    memmove(&run->tag_vouchers[index], &run->tag_vouchers[index + 1],
+            sizeof(BOItem) * (run->tag_voucher_count - index - 1));
+    run->tag_voucher_count--;
+    redeem_item(run, voucher);
     return 1;
 }
 

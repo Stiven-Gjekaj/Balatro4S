@@ -71,3 +71,16 @@ BO_TEST(test_voucher_directors_cut_rerolls_the_boss_once_an_ante) {
     BO_EQUAL_INT(run->dollars, 10);
     free(run);
 }
+
+BO_TEST(test_voucher_of_a_tag_can_be_redeemed_too) {
+    BORun *run = make_shop("ABCDEFGH", 30, BO_V_GRABBER);
+    run->tag_vouchers[run->tag_voucher_count++] = bo_pool_make_item(run, BO_V_WASTEFUL);
+    BO_EXPECT(bo_voucher_redeem_tag(run, 0));
+    BO_EQUAL_INT(run->tag_voucher_count, 0);
+    BO_EXPECT(run->used_vouchers[BO_V_WASTEFUL]);
+    BO_EQUAL_INT(run->discards_per_round, 5);
+    // The redeem clears current_round.voucher, but the shop keeps its card.
+    BO_EQUAL_INT(run->voucher, BO_CENTER_NONE);
+    BO_EXPECT(run->has_shop_voucher);
+    free(run);
+}

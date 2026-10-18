@@ -12,6 +12,10 @@ int bo_voucher_can_redeem(const BORun *run);
 // Buys the voucher of the shop and applies it to the run.
 int bo_voucher_redeem(BORun *run);
 
+// The vouchers that a Voucher Tag added to the shop.
+int bo_voucher_can_redeem_tag(const BORun *run, int index);
+int bo_voucher_redeem_tag(BORun *run, int index);
+
 // Card:apply_to_run: the effect of a voucher on the run.
 void bo_voucher_apply(BORun *run, BOCenterId center);
 

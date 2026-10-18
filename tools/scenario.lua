@@ -182,6 +182,13 @@ for _, w in ipairs(lines) do
     elseif key == 'eternal' then G.jokers.cards[tonumber(w[2])]:set_eternal(true)
     end
 end
+-- A "back" line: Back:apply_to_run after the cards of the scenario.
+for _, w in ipairs(lines) do
+    if w[1] == 'back' then
+        G.GAME.selected_back = Back(G.P_CENTERS[w[2]])
+        G.GAME.selected_back:apply_to_run()
+    end
+end
 B.manager:run_all()
 -- Balatro sorts the scoring cards by their place on the screen, so each
 -- card gets a place from left to right.
@@ -585,4 +592,20 @@ if do_end_round then
     local cons = {}
     for _, c in ipairs(G.consumeables.cards) do cons[#cons + 1] = ' ' .. c.config.center.key end
     print('consumables' .. table.concat(cons))
+    -- evaluate_round: the rows of money, and the tags after it.
+    local rows = {}
+    add_round_eval_row = function(config)
+        if config.name ~= 'bottom' then rows[#rows + 1] = config.name .. ':' .. (config.dollars or 0) end
+    end
+    ease_background_colour_blind = function() end
+    G.PROFILES[1].career_stats.c_round_interest_cap_streak = 0
+    -- A lost round ends the game: the game does not evaluate it.
+    if G.STATE ~= G.STATES.GAME_OVER then
+        G.FUNCS.evaluate_round()
+        B.manager:run_all()
+    end
+    print(table.concat({'eval', unpack(rows)}, ' '))
+    local tag_keys = {}
+    for i, t in ipairs(G.GAME.tags) do tag_keys[i] = t.key end
+    print(table.concat({'tags', unpack(tag_keys)}, ' '))
 end

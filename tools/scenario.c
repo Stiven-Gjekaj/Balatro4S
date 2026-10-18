@@ -416,6 +416,7 @@ int main(int argc, char **argv) {
     run->state = BO_STATE_SELECTING;
     run->blind = BO_BL_SMALL;
     run->blind_chips = 300;
+    run->blind_dollars = bo_blind_info(BO_BL_SMALL)->dollars;
     run->dollars = 4;
     run->hands_left = 4;
     run->discards_left = 3;
@@ -428,6 +429,7 @@ int main(int argc, char **argv) {
     run->castle_suit = BO_SPADES;
 
     BOCenterId useCenter = BO_CENTER_NONE, packCenter = BO_CENTER_NONE, redeemCenter = BO_CENTER_NONE;
+    BOCenterId back = BO_CENTER_NONE;
     PackStep steps[MAX_STEPS];
     int blindId = -1;
     BOCenterId tags[8];
@@ -530,9 +532,13 @@ int main(int argc, char **argv) {
                 !run->jokers[i].perishable) {
                 run->jokers[i].eternal = 1;
             }
+        } else if (strcmp(key, "back") == 0) {
+            back = bo_center_by_key(words[1]);
         }
     }
     fclose(file);
+    // Back:apply_to_run after the cards of the scenario.
+    if (back != BO_CENTER_NONE) bo_run_apply_back(run, back);
     if (tagCount > 0) {
         skip_for_tags(run, tags, tagCount);
         return 0;
@@ -551,6 +557,7 @@ int main(int argc, char **argv) {
     }
     if (blindId >= 0) {
         run->blind = (BOBlindId)blindId;
+        run->blind_dollars = bo_blind_info(run->blind)->dollars;
         bo_boss_set_blind(run);
         bo_boss_press_play(run);
     }
@@ -619,6 +626,22 @@ int main(int argc, char **argv) {
         print_jokers(run);
         printf("consumables");
         for (int i = 0; i < run->consumable_count; i++) printf(" %s", bo_center(run->consumables[i].center)->key);
+        printf("\n");
+        // The rows of money of evaluate_round, and the tags after it.
+        printf("eval");
+        for (int i = 0; i < run->eval.row_count; i++) {
+            const BOEvalRow *row = &run->eval.rows[i];
+            switch (row->kind) {
+            case BO_EVAL_BLIND: printf(" blind1:%d", row->dollars); break;
+            case BO_EVAL_HANDS: printf(" hands:%d", row->dollars); break;
+            case BO_EVAL_DISCARDS: printf(" discards:%d", row->dollars); break;
+            case BO_EVAL_JOKER: printf(" joker%d:%d", row->index + 1, row->dollars); break;
+            case BO_EVAL_TAG: printf(" tag%d:%d", row->index + 1, row->dollars); break;
+            case BO_EVAL_INTEREST: printf(" interest:%d", row->dollars); break;
+            }
+        }
+        printf("\ntags");
+        for (int i = 0; i < run->tag_count; i++) printf(" %s", bo_center(run->tags[i].center)->key);
         printf("\n");
     }
     return 0;

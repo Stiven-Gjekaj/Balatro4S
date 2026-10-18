@@ -10,7 +10,8 @@ shop and takes some of its cards. With --voucher, each scenario buys a
 voucher in the shop. With --blind, each play has a random blind. With --tag,
 each scenario skips blinds for random tags, then opens a shop. With --start,
 each scenario starts a run with a random deck and compares the start. With --round,
-each play comes after a discard and ends the round. With --each N, each
+each play comes after a discard and ends the round, and the money of
+evaluate_round is compared. About a third of the plays have a random deck. With --each N, each
 joker comes in N scenarios.
 """
 
@@ -262,6 +263,8 @@ def scenario(rng, jokers):
     held = [card(rng) for _ in range(rng.randint(0, 7))]
     if held:
         lines.append("hand " + " ".join(held))
+    if rng.random() < 0.3:
+        lines.append("back %s" % rng.choice(BACKS))
     if "--blind" in sys.argv:
         lines.append("blind " + rng.choice(BLINDS))
         lines.append("most_played " + rng.choice(HANDS))

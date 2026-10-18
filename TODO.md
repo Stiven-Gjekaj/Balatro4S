@@ -19,7 +19,7 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 - Deal a hand of 8 cards, and select up to 5 cards with a tap.
 - Find the poker hand of the selected cards, and score it with the base chips and mult.
 
-## 0.2: a full run with the standard deck
+## 0.2: a full run with the standard deck (done, 2026-10-18)
 
 - Play and discard, with the counts of hands and discards.
 - Add the blind select screen with the Small, Big, and Boss blinds.

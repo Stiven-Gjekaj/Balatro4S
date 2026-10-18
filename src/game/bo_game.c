@@ -1544,7 +1544,8 @@ static void draw_end(int won) {
                  bo_rgb(won ? BO_C_ORANGE : BO_C_RED), BO_ALIGN_CENTER);
     char text[64];
     float y = inner.y + G.height * 0.17f, size = G.height * 0.05f;
-    snprintf(text, sizeof(text), "Ante %d, round %d", run->ante, run->round);
+    // The boss of the win already moved the ante up.
+    snprintf(text, sizeof(text), "Ante %d, round %d", won ? run->ante - 1 : run->ante, run->round);
     bo_font_draw(text, inner.x + inner.w / 2, y, size, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
     if (!won) {
         snprintf(text, sizeof(text), "Defeated by %s", bo_blind_info(run->blind)->name);

@@ -7,6 +7,9 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
     [application setStatusBarHidden:YES];
+    // A card game has no touch for a long time while the player thinks.
+    // The screen stays on while the game is in front.
+    application.idleTimerDisabled = YES;
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     _game = [[BOGameViewController alloc] init];
     self.window.rootViewController = _game;

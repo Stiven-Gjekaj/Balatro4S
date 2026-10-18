@@ -8,11 +8,13 @@ Objective-C, with OpenGL ES 2.0. You install it as a .deb package.
 
 This is a fan project. It is not from LocalThunk or Playstack.
 
-**The status:** early work. Version 0.5.0 plays a full run of 8 antes with
+**The status:** early work. Version 0.6.0 plays a full run of 8 antes with
 the standard deck and the seeds of Balatro. It has the shop, all 150
 jokers, all Tarot, Planet, and Spectral cards, all booster packs, all
-vouchers, all tags, and all boss blinds. The animations, the sounds, the
-other decks, the stakes, and the saves come in the next versions. The plan is in
+vouchers, all tags, and all boss blinds. Each joker agrees with Balatro in
+its own tests. The editions use the shaders of Balatro. The animations, the
+sounds, the other decks, the stakes, and the saves come in the next
+versions. The plan is in
 [TODO.md](TODO.md), and the decisions and their reasons are in
 [docs/decisions.md](docs/decisions.md).
 

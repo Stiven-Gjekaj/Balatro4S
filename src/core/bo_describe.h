@@ -40,6 +40,14 @@ const char *bo_describe_word(const char *key);
 // The text of a locked deck, as Back:generate_UI: the unlock condition.
 int bo_describe_locked_back(int back, BODescription *out);
 
+// The text of a locked joker or voucher, as generate_card_ui with
+// "Locked": the unlock text of the card, with its vars.
+int bo_describe_locked(int center, BODescription *out);
+
+// The text of a card that is not discovered: undiscovered_joker and the
+// others of the "Other" descriptions.
+int bo_describe_undiscovered(int center, BODescription *out);
+
 // The value of a description variable as Lua writes a number.
 void bo_describe_number(double value, char *out, int size);
 

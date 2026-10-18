@@ -532,3 +532,105 @@ int bo_describe_locked_back(int back, BODescription *out) {
     }
     return 1;
 }
+
+// number_format: a whole number with commas, as "1,000,000".
+static void comma_number(double value, char *out, int size) {
+    char digits[32];
+    snprintf(digits, sizeof(digits), "%.0f", value);
+    int len = (int)strlen(digits), o = 0;
+    for (int i = 0; i < len && o < size - 1; i++) {
+        out[o++] = digits[i];
+        if ((len - i - 1) % 3 == 0 && i < len - 1 && o < size - 1) out[o++] = ',';
+    }
+    out[o] = 0;
+}
+
+// The lines of a text entry at path, as localize.
+static int fill_from(const char *path, const char *lines_key, const BOVars *vars, BODescription *out) {
+    BOLuaValue *entry = gText ? bo_luatab_path(gText, path) : NULL;
+    if (!entry) return 0;
+    BOLuaValue *text = bo_luatab_get(entry, lines_key);
+    int lines = bo_luatab_length(text);
+    for (int i = 0; i < lines && out->line_count < BO_DESCRIBE_LINES; i++) {
+        BOLuaValue *line = bo_luatab_item(text, i);
+        if (!line || line->type != BO_LUA_STRING) continue;
+        fill_line(line->string, vars, out->lines[out->line_count++], BO_DESCRIBE_LINE_LENGTH);
+    }
+    return 1;
+}
+
+int bo_describe_locked(int center, BODescription *out) {
+    memset(out, 0, sizeof(*out));
+    const BOCenterInfo *c = bo_center((BOCenterId)center);
+    if (!c) return 0;
+    snprintf(out->name, sizeof(out->name), "%s", bo_describe_word("k_locked"));
+    BOVars vars;
+    memset(&vars, 0, sizeof(vars));
+    const char *type = c->unlock_type ? c->unlock_type : "";
+    char text[64];
+    if (strcmp(type, "modify_deck") == 0 && c->unlock_kind == 1) {
+        var_number(&vars, c->unlock_number);
+        char path[64];
+        snprintf(path, sizeof(path), "misc.suits_singular.%s", c->unlock_text);
+        const char *suit = gText ? bo_luatab_string(gText, path) : NULL;
+        var_text(&vars, suit ? suit : c->unlock_text);
+    } else if (strcmp(type, "modify_deck") == 0 && c->unlock_kind == 2) {
+        var_number(&vars, c->unlock_number);
+        var_text(&vars, text_name("Enhanced", c->unlock_text, c->unlock_text));
+    } else if (strcmp(type, "chip_score") == 0) {
+        comma_number(c->unlock_number, text, sizeof(text));
+        var_text(&vars, text);
+    } else if (c->unlock_text && strcmp(type, "win_deck") != 0) {
+        var_text(&vars, c->unlock_text);
+    } else {
+        var_number(&vars, c->unlock_number);
+    }
+    // The career stats and the Blank redeems show how far the player is.
+    const BOProfile *p = bo_profile_active();
+    if (p && strncmp(type, "c_", 2) == 0) {
+        static const char *stats[BO_STAT_COUNT] = {
+            "c_round_interest_cap_streak", "c_dollars_earned", "c_shop_dollars_spent", "c_tarots_bought",
+            "c_planets_bought", "c_playing_cards_bought", "c_vouchers_bought", "c_tarot_reading_used",
+            "c_planetarium_used", "c_shop_rerolls", "c_cards_played", "c_cards_discarded", "c_losses", "c_wins",
+            "c_rounds", "c_hands_played", "c_face_cards_played", "c_jokers_sold", "c_cards_sold",
+            "c_single_hand_round_streak",
+        };
+        for (int i = 0; i < BO_STAT_COUNT; i++) {
+            if (strcmp(type, stats[i]) == 0) var_number(&vars, p->stats[i]);
+        }
+    } else if (p && strcmp(type, "interest_streak") == 0) {
+        var_number(&vars, p->stats[BO_STAT_ROUND_INTEREST_CAP_STREAK]);
+    } else if (p && strcmp(type, "blank_redeems") == 0) {
+        var_number(&vars, p->blank_redeems);
+    }
+    char path[128];
+    // A legendary joker comes only from The Soul.
+    if (c->set == BO_SET_JOKER && c->rarity == 4) {
+        return fill_from("descriptions.Other.joker_locked_legendary", "text", &vars, out);
+    }
+    snprintf(path, sizeof(path), "descriptions.%s.%s", set_key(c->set), c->key);
+    return fill_from(path, "unlock", &vars, out);
+}
+
+int bo_describe_undiscovered(int center, BODescription *out) {
+    memset(out, 0, sizeof(*out));
+    const BOCenterInfo *c = bo_center((BOCenterId)center);
+    if (!c) return 0;
+    static const char *keys[] = {"joker", "tarot", "planet", "spectral", "voucher", "booster", "edition", "tag"};
+    static const int sets[] = {BO_SET_JOKER, BO_SET_TAROT, BO_SET_PLANET, BO_SET_SPECTRAL, BO_SET_VOUCHER,
+                               BO_SET_BOOSTER, BO_SET_EDITION, BO_SET_TAG};
+    const char *key = NULL;
+    for (int i = 0; i < 8; i++) {
+        if (c->set == sets[i]) key = keys[i];
+    }
+    if (!key) return 0;
+    char path[96];
+    snprintf(path, sizeof(path), "descriptions.Other.undiscovered_%s", key);
+    snprintf(out->name, sizeof(out->name), "%s", "Not Discovered");
+    BOLuaValue *entry = gText ? bo_luatab_path(gText, path) : NULL;
+    const char *name = entry ? bo_luatab_string(entry, "name") : NULL;
+    if (name) snprintf(out->name, sizeof(out->name), "%s", name);
+    BOVars vars;
+    memset(&vars, 0, sizeof(vars));
+    return fill_from(path, "text", &vars, out);
+}

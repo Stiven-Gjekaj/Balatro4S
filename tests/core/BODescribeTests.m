@@ -3,6 +3,7 @@
 #import "BOTest.h"
 #include <stdlib.h>
 #include "bo_describe.h"
+#include "bo_profile.h"
 #include "bo_pool.h"
 #include "bo_run.h"
 
@@ -152,6 +153,37 @@ BO_TEST(test_describe_writes_the_condition_of_a_locked_deck) {
     BO_EQUAL(@(d.lines[1]), @"{C:attention}Red Deck{}");
     BO_EXPECT(bo_describe_locked_back(BO_B_PAINTED, &d));
     BO_EQUAL(@(d.lines[1]), @"{V:1}Green Stake{} difficulty");
+    bo_describe_set_text(NULL);
+    bo_luatab_free(text);
+}
+
+BO_TEST(test_describe_writes_the_unlock_and_undiscovered_texts) {
+    BOLuaValue *text = bo_luatab_parse(
+        "return { descriptions = {\n"
+        "  Joker = { j_burnt = { name = 'Burnt Joker', text = {}, unlock = { 'Sell #1# cards', '(#2#)' } },\n"
+        "            j_rough_gem = { name = 'Rough Gem', text = {}, unlock = { '#1# #2# cards' } },\n"
+        "            j_idol = { name = 'The Idol', text = {}, unlock = { 'Score #1# chips' } } },\n"
+        "  Other = { undiscovered_tarot = { name = 'Not Discovered', text = { 'Use this card' } } } },\n"
+        "  misc = { dictionary = { k_locked = 'Locked' }, suits_singular = { Diamonds = 'Diamond' } } }");
+    bo_describe_set_text(text);
+    BOProfile *p = calloc(1, sizeof(BOProfile));
+    bo_profile_init(p);
+    p->stats[BO_STAT_CARDS_SOLD] = 7;
+    bo_profile_set_active(p);
+    BODescription d;
+    BO_EXPECT(bo_describe_locked(BO_J_BURNT, &d));
+    BO_EQUAL(@(d.name), @"Locked");
+    BO_EQUAL(@(d.lines[0]), @"Sell 50 cards");
+    BO_EQUAL(@(d.lines[1]), @"(7)");
+    BO_EXPECT(bo_describe_locked(BO_J_ROUGH_GEM, &d));
+    BO_EQUAL(@(d.lines[0]), @"30 Diamond cards");
+    BO_EXPECT(bo_describe_locked(BO_J_IDOL, &d));
+    BO_EQUAL(@(d.lines[0]), @"Score 1,000,000 chips");
+    BO_EXPECT(bo_describe_undiscovered(BO_C_FOOL, &d));
+    BO_EQUAL(@(d.name), @"Not Discovered");
+    BO_EQUAL(@(d.lines[0]), @"Use this card");
+    bo_profile_set_active(NULL);
+    free(p);
     bo_describe_set_text(NULL);
     bo_luatab_free(text);
 }

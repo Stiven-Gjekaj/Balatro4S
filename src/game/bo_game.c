@@ -1567,6 +1567,9 @@ static void draw_blind_select(void) {
         if (current) {
             if (bo_ui_button(BO_ID_SELECT_BLIND, button, BO_C_ORANGE, "Select", 1)) {
                 bo_run_select_blind(run);
+                // set_blind: the chips and the gold seal sounds.
+                bo_sound_play("chips1", sound_random() * 0.1f + 0.55f, 0.42f);
+                bo_sound_play("gold_seal", sound_random() * 0.1f + 1.85f, 0.26f);
                 G.shownRound = 0;
                 sync_hand();
                 return;
@@ -1606,6 +1609,7 @@ static void draw_blind_select(void) {
             if (bo_ui_button(current ? BO_ID_SKIP_BLIND : -1, skip, BO_C_RED, "Skip Blind",
                              current && bo_run_can_skip_blind(run))) {
                 bo_run_skip_blind(run);
+                bo_sound_play("generic1", 1, 1);
                 G.focus = BO_FOCUS_NONE;
                 if (run->state == BO_STATE_PACK) sync_hand();
                 return;
@@ -1642,6 +1646,7 @@ static void draw_cash_out(void) {
     if (bo_ui_button(BO_ID_CASH_OUT, bo_rect(inner.x + 12, inner.y + 12, inner.w - 24, G.height * 0.1f), BO_C_ORANGE,
                      text, 1)) {
         bo_run_cash_out(run);
+        bo_sound_play("coin7", 1, 1);
         G.shownRound = 0;
         G.focus = BO_FOCUS_NONE;
         return;
@@ -2355,6 +2360,8 @@ static void draw_shop(void) {
     int canReroll = run->reroll_cost <= bo_run_spendable(run) || run->reroll_cost <= 0;
     if (bo_ui_button(BO_ID_REROLL, bo_rect(bx, by + bh + 12, bw, bh), BO_C_GREEN, text, canReroll)) {
         bo_run_reroll(run);
+        bo_sound_play("coin2", 1, 1);
+        bo_sound_play("other1", 1, 1);
         G.focus = BO_FOCUS_NONE;
     }
 
@@ -2420,6 +2427,42 @@ static void pack_card_place(int index, int count, float *x, float *y) {
     BORect row = bo_rect(area.x + area.w * 0.05f, 0, area.w * 0.9f, G.cardH);
     *x = slot_x(row, index, count);
     *y = G.height * 0.295f;
+}
+
+// The sounds of a sell, a buy, a use, a redeem, and the open of a pack.
+static void action_sound(BOFocusArea focus, int tapped, const BOItem *item, int playing) {
+    int set = playing ? -1 : bo_item_center(item)->set;
+    switch (focus) {
+    case BO_FOCUS_JOKER:
+        bo_sound_play("coin2", 1, 1);
+        break;
+    case BO_FOCUS_CONSUMABLE:
+        bo_sound_play(tapped == 1 ? "tarot1" : "coin2", 1, 1);
+        break;
+    case BO_FOCUS_SHOP:
+        bo_sound_play("card1", 1, 1);
+        break;
+    case BO_FOCUS_VOUCHER:
+    case BO_FOCUS_TAG_VOUCHER:
+        bo_sound_play("card1", 1, 1);
+        bo_sound_play("coin1", 1, 1);
+        break;
+    case BO_FOCUS_PACK:
+        // Card:explode: the build up, and the release when the pack opens.
+        bo_sound_play("explosion_buildup1", 1, 1);
+        sound_later(0.5f, "explosion_release1", 1, 1);
+        break;
+    case BO_FOCUS_PACK_CARD:
+        if (set == BO_SET_JOKER || playing) {
+            bo_sound_play("card1", 0.8f, 0.6f);
+            bo_sound_play("generic1", 1, 1);
+        } else {
+            bo_sound_play("tarot1", 1, 1);
+        }
+        break;
+    default:
+        break;
+    }
 }
 
 // A popup over the side panel after a card was used: the new level of a
@@ -2544,6 +2587,7 @@ static void draw_focus(void) {
     int done = 0;
     int dollars = run->dollars;
     BOItem used = *item;
+    BOFocusArea focus = G.focus;
     switch (G.focus) {
     case BO_FOCUS_JOKER: done = bo_run_sell_joker(run, G.focusIndex); break;
     case BO_FOCUS_CONSUMABLE:
@@ -2567,7 +2611,10 @@ static void draw_focus(void) {
         break;
     default: break;
     }
-    if (done) G.focus = BO_FOCUS_NONE;
+    if (done) {
+        G.focus = BO_FOCUS_NONE;
+        action_sound(focus, tapped, &used, playing);
+    }
     fprintf(stderr, "action %d: %s\n", tapped, done ? "done" : "refused");
 }
 
@@ -2869,6 +2916,45 @@ static void shake_room(void) {
     bo_gfx_room(r, dx * u, dy * u);
 }
 
+// The sounds of a change of the state of the run: the defeat of a blind,
+// the shop, the blind select, the win, and the game over.
+static void state_sounds(void) {
+    BORun *run = G.run;
+    if (!run || G.setup) {
+        G.soundState = -1;
+        return;
+    }
+    // The run changes its state at the play. The sounds wait for the end
+    // of the scoring on the screen.
+    if (G.flow != BO_FLOW_IDLE) return;
+    int state = run->state * 2 + (run->won ? 1 : 0);
+    int before = G.soundState;
+    G.soundState = state;
+    if (before < 0 || before == state) return;
+    int was = before / 2;
+    if (run->won && !(before & 1)) {
+        bo_sound_play("win", 1, 1);
+    } else if (run->state == BO_STATE_GAME_OVER) {
+        bo_sound_play("negative", 0.5f, 0.7f);
+        bo_sound_play("whoosh2", 0.9f, 0.7f);
+    } else if (run->state == BO_STATE_ROUND_EVAL && was == BO_STATE_SELECTING) {
+        // Blind:defeat: one ping for each dollar of the blind and two more.
+        int pings = run->blind_dollars + 2;
+        if (pings > 7) pings = 7;
+        float extra = 0;
+        for (int i = 1; i <= pings; i++) {
+            extra += (0.15f - 0.01f * pings) * i;
+            sound_later(extra, "cancel", 0.8f - 0.05f * i, 1.7f);
+            if (i == (pings + 1 < 6 ? pings + 1 : 6)) sound_later(extra, "whoosh2", 0.7f, 0.42f);
+        }
+        sound_later(extra + 0.3f, "cardFan2", 1, 1);
+    } else if (run->state == BO_STATE_SHOP && was != BO_STATE_PACK) {
+        bo_sound_play("cardFan2", 1, 1);
+    } else if (run->state == BO_STATE_BLIND_SELECT && was == BO_STATE_SHOP) {
+        bo_sound_play("cancel", 1, 1);
+    }
+}
+
 // modulate_sound: the music track of the state of the game. The pack
 // sparkles of Arcana and Spectral packs and the other packs play music2,
 // the meteors of Celestial packs play music3.
@@ -2891,6 +2977,8 @@ static void modulate_music(double dt) {
 void bo_game_frame(double dt) {
     bo_debug_poll(dt);
     modulate_music(dt);
+    update_later(dt * game_speed());
+    state_sounds();
     G.time += dt;
     G.frames++;
     if (G.time - G.fpsTime >= 5) {

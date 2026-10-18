@@ -72,6 +72,12 @@ enum {
     BO_ID_INFO_NEW_RUN,  // Run Info: leave this run for a new one.
     BO_ID_SETUP_BACK,    // The run setup: back to the run that is on.
     BO_ID_UNLOCK_ALL,    // The run setup: unlock all cards, with a second tap.
+    BO_ID_COLLECTION,    // The run setup: open the collection.
+    BO_ID_COL_CLOSE,
+    BO_ID_COL_PREV,
+    BO_ID_COL_NEXT,
+    BO_ID_COL_TAB = 600,   // A tab of the collection.
+    BO_ID_COL_CARD = 620,  // A card of the collection page.
     BO_ID_BACKGROUND,  // A tap on nothing: the focus goes away.
     BO_ID_HAND_CARD = 100,
     BO_ID_JOKER = 200,
@@ -188,6 +194,8 @@ static struct {
     BOCenterId notice;      // A card that the profile unlocked, on the screen.
     float noticeAge;
     float unlockConfirm;    // Unlock All waits for a second tap this long.
+    int collection;         // The collection is open.
+    int colTab, colPage, colFocus;  // The tab, the page, and the card that shows its text.
     float blindTagX[2], blindTagY[2];  // The tags of the blind select.
 
     // A drag of a joker.
@@ -1524,6 +1532,12 @@ static void draw_setup(void) {
     bo_ui_box(inner, BO_C_DARK);
     bo_font_draw("New Run", inner.x + inner.w / 2, inner.y + G.height * 0.02f, G.height * 0.08f,
                  bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    float colW = inner.w * 0.2f;
+    if (bo_ui_button(BO_ID_COLLECTION, bo_rect(inner.x + inner.w - colW - 14, inner.y + 14, colW, G.height * 0.075f),
+                     BO_C_ORANGE, "Collection", 1)) {
+        G.collection = 1;
+        G.colFocus = -1;
+    }
     // The deck, between the two arrows.
     float cw = G.cardW * 1.3f, ch = G.cardH * 1.3f;
     float cx = inner.x + inner.w * 0.24f - cw / 2, cy = inner.y + G.height * 0.17f;
@@ -1629,6 +1643,227 @@ static void draw_setup(void) {
                      BO_C_BLUE, "Play", !locked)) {
         G.setup = 0;
         new_run();
+    }
+}
+
+// --- The collection ---------------------------------------------------------
+
+typedef struct {
+    const char *label;
+    int set;          // A BOSet, or -1 for the blinds.
+    int columns, rows;
+} BOCollectionTab;
+
+static const BOCollectionTab kCollectionTabs[] = {
+    {"Jokers", BO_SET_JOKER, 5, 3},     {"Decks", BO_SET_BACK, 5, 3},       {"Vouchers", BO_SET_VOUCHER, 5, 3},
+    {"Tarots", BO_SET_TAROT, 5, 3},     {"Planets", BO_SET_PLANET, 5, 3},   {"Spectrals", BO_SET_SPECTRAL, 5, 3},
+    {"Packs", BO_SET_BOOSTER, 5, 3},    {"Tags", BO_SET_TAG, 6, 4},         {"Blinds", -1, 6, 5},
+};
+#define BO_COLLECTION_TABS ((int)(sizeof(kCollectionTabs) / sizeof(kCollectionTabs[0])))
+
+// The cards of a tab, in the order of the collection of Balatro.
+static int collection_items(int tab, int *out, int max) {
+    int count = 0;
+    if (kCollectionTabs[tab].set < 0) {
+        for (int b = 0; b < BO_BLIND_COUNT && count < max; b++) out[count++] = b;
+        for (int i = 1; i < count; i++) {
+            for (int j = i; j > 0 && bo_blind_info((BOBlindId)out[j - 1])->order > bo_blind_info((BOBlindId)out[j])->order;
+                 j--) {
+                int t = out[j];
+                out[j] = out[j - 1];
+                out[j - 1] = t;
+            }
+        }
+        return count;
+    }
+    for (int i = 0; i < BO_CENTER_COUNT && count < max; i++) {
+        const BOCenterInfo *c = bo_center((BOCenterId)i);
+        if (c->set != kCollectionTabs[tab].set || (c->omit && c->set != BO_SET_TAG)) continue;
+        out[count++] = i;
+    }
+    for (int i = 1; i < count; i++) {
+        for (int j = i; j > 0 && bo_center((BOCenterId)out[j - 1])->order > bo_center((BOCenterId)out[j])->order; j--) {
+            int t = out[j];
+            out[j] = out[j - 1];
+            out[j - 1] = t;
+        }
+    }
+    return count;
+}
+
+static int collection_blind_discovered(int blind) {
+    return !G.profile || G.profile->blind_discovered[blind];
+}
+
+// One card of the collection: its art when it is discovered, else the art
+// of a locked or an undiscovered card, as Card:set_sprites.
+static void draw_collection_card(int tab, int id, float x, float y, float w, float h) {
+    BOColor white = bo_rgb(BO_C_WHITE);
+    int set = kCollectionTabs[tab].set;
+    if (set < 0) {
+        if (collection_blind_discovered(id)) {
+            draw_blind_chip((BOBlindId)id, x, y, w);
+        } else {
+            float frame = G.chips.width / 21.0f;
+            bo_gfx_sprite(&G.chips, 0, frame * 30, frame, frame, x, y, w, w, 0, white);
+        }
+        return;
+    }
+    if (set == BO_SET_TAG) {
+        if (bo_profile_discovered((BOCenterId)id)) {
+            draw_tag((BOCenterId)id, x, y, w);
+        } else {
+            draw_cell(&G.tags, 6, 5, 3, 4, x, y, w, w, white);
+        }
+        return;
+    }
+    int locked = !bo_profile_unlocked((BOCenterId)id);
+    int found = bo_profile_discovered((BOCenterId)id);
+    draw_shadow(x, y, w, h);
+    if (set == BO_SET_BACK) {
+        const BOCenterInfo *c = bo_center((BOCenterId)id);
+        draw_cell(&G.centers, 7, 5, locked ? 4 : c->pos_x, locked ? 0 : c->pos_y, x, y, w, h, white);
+    } else if (locked && set == BO_SET_JOKER) {
+        draw_cell(&G.jokers, 10, 16, 8, 9, x, y, w, h, white);
+    } else if (locked && set == BO_SET_VOUCHER) {
+        draw_cell(&G.vouchers, 9, 4, 8, 3, x, y, w, h, white);
+    } else if (!found && set == BO_SET_JOKER) {
+        draw_cell(&G.jokers, 10, 16, 9, 9, x, y, w, h, white);
+    } else if (!found && set == BO_SET_VOUCHER) {
+        draw_cell(&G.vouchers, 9, 4, 8, 2, x, y, w, h, white);
+    } else if (!found && set == BO_SET_BOOSTER) {
+        draw_cell(&G.boosters, 4, 9, 0, 5, x, y, w, h, white);
+    } else if (!found && (set == BO_SET_TAROT || set == BO_SET_PLANET || set == BO_SET_SPECTRAL)) {
+        int col = set == BO_SET_TAROT ? 6 : set == BO_SET_PLANET ? 7 : 5;
+        draw_cell(&G.tarots, 10, 6, col, 2, x, y, w, h, white);
+    } else {
+        BOItem item;
+        memset(&item, 0, sizeof(item));
+        item.center = (BOCenterId)id;
+        bo_item_set_ability(&item, item.center, 0);
+        draw_item(&item, x, y, w, h);
+    }
+}
+
+// The text of the focused card of the collection.
+static void collection_text(int tab, int id, BODescription *d) {
+    int set = kCollectionTabs[tab].set;
+    if (set < 0) {
+        if (collection_blind_discovered(id)) {
+            bo_describe_blind(NULL, id, d);
+        } else {
+            memset(d, 0, sizeof(*d));
+            snprintf(d->name, sizeof(d->name), "%s", "Undiscovered");
+            // b_undiscovered.debuff_text, in two lines.
+            snprintf(d->lines[0], sizeof(d->lines[0]), "%s", "Defeat this blind");
+            snprintf(d->lines[1], sizeof(d->lines[1]), "%s", "to discover");
+            d->line_count = 2;
+        }
+        return;
+    }
+    if (!bo_profile_unlocked((BOCenterId)id)) {
+        if (set == BO_SET_BACK) bo_describe_locked_back(id, d);
+        else bo_describe_locked(id, d);
+    } else if (!bo_profile_discovered((BOCenterId)id)) {
+        bo_describe_undiscovered(id, d);
+    } else if (set == BO_SET_TAG) {
+        bo_describe_tag(NULL, id, BO_HAND_HIGH_CARD, d);
+    } else {
+        BOItem item;
+        memset(&item, 0, sizeof(item));
+        item.center = (BOCenterId)id;
+        bo_item_set_ability(&item, item.center, 0);
+        bo_describe_item(NULL, &item, d);
+    }
+}
+
+// G.FUNCS.your_collection: the tabs, a page of cards, and the text of the
+// card that the player taps.
+static void draw_collection(void) {
+    BORect box = bo_rect(6, 6, G.width - 12, G.height - 12);
+    bo_ui_box(box, BO_C_BLACK);
+    BORect inner = bo_rect(box.x + 6, box.y + 6, box.w - 12, box.h - 12);
+    bo_ui_box(inner, BO_C_DARK);
+    // The tabs.
+    float tabH = G.height * 0.075f, gap = 4;
+    float tabW = (inner.w - 16 - gap * (BO_COLLECTION_TABS - 1)) / BO_COLLECTION_TABS;
+    for (int t = 0; t < BO_COLLECTION_TABS; t++) {
+        BORect r = bo_rect(inner.x + 8 + t * (tabW + gap), inner.y + 8, tabW, tabH);
+        if (bo_ui_button(BO_ID_COL_TAB + t, r, t == G.colTab ? BO_C_RED : BO_C_GREY, kCollectionTabs[t].label, 1)) {
+            G.colTab = t;
+            G.colPage = 0;
+            G.colFocus = -1;
+        }
+    }
+    int items[BO_CENTER_COUNT];
+    int count = collection_items(G.colTab, items, BO_CENTER_COUNT);
+    const BOCollectionTab *tab = &kCollectionTabs[G.colTab];
+    int perPage = tab->columns * tab->rows;
+    int pages = (count + perPage - 1) / perPage;
+    if (G.colPage >= pages) G.colPage = pages - 1;
+    if (G.colPage < 0) G.colPage = 0;
+    // The grid.
+    float top = inner.y + tabH + 20, bottom = inner.y + inner.h - G.height * 0.11f;
+    float cellH = (bottom - top) / tab->rows, cellW = (inner.w * 0.62f) / tab->columns;
+    int square = tab->set == BO_SET_TAG || tab->set < 0;
+    float h = cellH * 0.9f, w = square ? h : h * G.cardW / G.cardH;
+    if (w > cellW * 0.92f) {
+        w = cellW * 0.92f;
+        h = square ? w : w * G.cardH / G.cardW;
+    }
+    float gridX = inner.x + 12;
+    for (int i = 0; i < perPage; i++) {
+        int index = G.colPage * perPage + i;
+        if (index >= count) break;
+        int col = i % tab->columns, row = i / tab->columns;
+        float x = gridX + col * cellW + (cellW - w) / 2, y = top + row * cellH + (cellH - h) / 2;
+        float lift = G.colFocus == index ? h * 0.06f : 0;
+        draw_collection_card(G.colTab, items[index], x, y - lift, w, h);
+        bo_ui_area(BO_ID_COL_CARD + i, bo_rect(x, y, w, h));
+        if (bo_ui_clicked(BO_ID_COL_CARD + i)) G.colFocus = index;
+    }
+    // The page arrows.
+    float aw = G.width * 0.07f, ah = G.height * 0.075f, ay = inner.y + inner.h - ah - 10;
+    float midX = gridX + cellW * tab->columns / 2;
+    if (pages > 1 && bo_ui_button(BO_ID_COL_PREV, bo_rect(midX - aw * 2, ay, aw, ah), BO_C_RED, "<", 1)) {
+        G.colPage = G.colPage == 0 ? pages - 1 : G.colPage - 1;
+        G.colFocus = -1;
+    }
+    if (pages > 1 && bo_ui_button(BO_ID_COL_NEXT, bo_rect(midX + aw, ay, aw, ah), BO_C_RED, ">", 1)) {
+        G.colPage = G.colPage == pages - 1 ? 0 : G.colPage + 1;
+        G.colFocus = -1;
+    }
+    char text[32];
+    snprintf(text, sizeof(text), "%d/%d", G.colPage + 1, pages > 0 ? pages : 1);
+    bo_font_draw(text, midX, ay + ah * 0.15f, ah * 0.7f, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+    if (bo_ui_button(BO_ID_COL_CLOSE, bo_rect(inner.x + inner.w - inner.w * 0.18f - 10, ay, inner.w * 0.18f, ah),
+                     BO_C_ORANGE, "Back", 1)) {
+        G.collection = 0;
+    }
+    // The text of the focused card, on the right.
+    if (G.colFocus >= 0 && G.colFocus < count) {
+        BODescription d;
+        collection_text(G.colTab, items[G.colFocus], &d);
+        float tx = inner.x + inner.w * 0.66f, tw = inner.w * 0.32f, line = G.height * 0.04f, pad = 8;
+        BORect nameBox = bo_rect(tx, top, tw, G.height * 0.07f);
+        bo_ui_box(nameBox, BO_C_L_BLACK);
+        bo_font_draw(d.name, tx + tw / 2, top + G.height * 0.008f, G.height * 0.055f, bo_rgb(BO_C_WHITE),
+                     BO_ALIGN_CENTER);
+        if (d.line_count > 0) {
+            BORect body = bo_rect(tx, top + nameBox.h + 6, tw, d.line_count * line * 1.2f + pad * 2);
+            bo_ui_box(body, BO_C_WHITE);
+            for (int i = 0; i < d.line_count; i++) {
+                bo_rich_draw(d.lines[i], tx + tw / 2, body.y + pad + i * line * 1.2f, line, bo_rgb(BO_C_TEXT_DARK),
+                             BO_ALIGN_CENTER);
+            }
+        }
+    }
+    // The count of discovered cards, as the collection of Balatro shows.
+    if (G.profile) {
+        int total, of;
+        bo_profile_discover_tallies(G.profile, &total, &of, NULL, NULL);
+        snprintf(text, sizeof(text), "%d/%d", total, of);
+        bo_font_draw(text, inner.x + 14, ay + ah * 0.2f, ah * 0.55f, bo_rgb(BO_C_GREY), BO_ALIGN_LEFT);
     }
 }
 
@@ -2218,6 +2453,13 @@ void bo_game_frame(double dt) {
     bo_gfx_begin(G.width, G.height, bo_rgb(0x3a5c4f));
     shake_room();
     if (G.unlockConfirm > 0) G.unlockConfirm -= (float)dt;
+    if (G.collection) {
+        draw_collection();
+        draw_notice(dt);
+        bo_gfx_flush();
+        bo_ui_end();
+        return;
+    }
     if (G.setup) {
         draw_setup();
         draw_notice(dt);

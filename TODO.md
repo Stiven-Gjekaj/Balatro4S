@@ -54,7 +54,7 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 - Port the 24 tags and the skip of a blind.
 - Port the 28 boss blinds, with the 5 final boss blinds.
 
-## 0.6: all 150 jokers
+## 0.6: all 150 jokers (done, 2026-10-18)
 
 - Port the rest of the common jokers.
 - Port the rest of the uncommon jokers.

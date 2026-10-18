@@ -1627,6 +1627,13 @@ void bo_game_debug(const char *line) {
             }
         }
         fprintf(stderr, "debug: joker %s\n", word);
+    } else if (sscanf(line, "voucher %63s", word) == 1) {
+        BOCenterId center = bo_center_by_key(word);
+        if (center != BO_CENTER_NONE && bo_center(center)->set == BO_SET_VOUCHER) {
+            G.run->used_vouchers[center] = 1;
+            bo_voucher_apply(G.run, center);
+        }
+        fprintf(stderr, "debug: voucher %s\n", word);
     } else if (sscanf(line, "pack %63s", word) == 1) {
         BOCenterId center = bo_center_by_key(word);
         if (center != BO_CENTER_NONE && G.run->state == BO_STATE_SHOP) {

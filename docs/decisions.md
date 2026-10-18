@@ -187,3 +187,25 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
   size because they replace the card. Each frame renders again the two
   slots that waited longest. With 10 cards with editions and a Spectral
   card, the game runs at 60 frames per second.
+- **The background renders at 120 x 80 before the screen clears** (0.7,
+  2026-10-18). The background shader of Balatro over the full screen of
+  960 x 640 is too slow for the A5. At 240 x 160 it took about 10 ms each
+  frame, and the game ran at 37 frames per second. At 120 x 80 the game
+  runs at 60 frames per second. The pass into the small texture comes
+  before the clear of the screen: a change of framebuffer after the clear
+  makes the GPU store the screen and load it again. The colours follow
+  `ease_background_colour_blind`.
+
+## The motion
+
+- **The cards move with the springs of Balatro** (0.7, 2026-10-18).
+  `bo_motion` ports `move_xy`, `move_r`, `move_scale`, and `juice_up` of
+  `Moveable` with the same constants, in the units of the game. A card
+  leans in the direction that it moves, and it shakes when it scores. The
+  hand fans and sways as `align_cards` puts it. The screen shake follows
+  `update_canvas_juice` with the screen shake setting at 50, as a new
+  profile starts.
+- **The turn of a card is a transform in `bo_gfx`.** All the layers of a
+  card, its edition, its seal, and its shadow turn as one. The effect
+  cache renders its slots upright, and the transform applies when the
+  slot draws.

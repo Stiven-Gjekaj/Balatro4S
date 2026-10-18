@@ -1595,7 +1595,9 @@ static void draw_setup(void) {
     int maxStake = bo_profile_max_stake(G.profile, G.setupBack);
     if (G.setupStake > maxStake) G.setupStake = maxStake;
     int stake = G.setupStake;
+    // The stake row is under the deck, and under a long text of the deck.
     float sy = cy + ch + G.height * 0.075f, chip = G.height * 0.1f;
+    if (sy < body.y + body.h + G.height * 0.045f) sy = body.y + body.h + G.height * 0.045f;
     float scx = cx + cw / 2 - chip / 2;
     draw_cell(&G.stakes, 5, 2, chipPos[stake - 1][0], chipPos[stake - 1][1], scx, sy, chip, chip,
               bo_rgb(BO_C_WHITE));
@@ -1616,7 +1618,10 @@ static void draw_setup(void) {
                  bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
     BOLuaValue *lines = entry ? bo_luatab_get(entry, "text") : NULL;
     int lineCount = lines ? bo_luatab_length(lines) : 0;
+    // The text gets smaller when it does not fit over the buttons.
     float sline = G.height * 0.036f;
+    float room = inner.y + inner.h - G.height * 0.11f - 14 - 6 - (stakeBox.y + stakeBox.h + 6) - pad;
+    if (lineCount > 0 && lineCount * sline * 1.2f > room) sline = room / (lineCount * 1.2f);
     BORect stakeBody = bo_rect(tx, stakeBox.y + stakeBox.h + 6, tw, lineCount * sline * 1.2f + pad);
     if (lineCount) bo_ui_box(stakeBody, BO_C_WHITE);
     for (int i = 0; i < lineCount; i++) {

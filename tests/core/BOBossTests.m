@@ -142,3 +142,19 @@ BO_TEST(test_boss_serpent_draws_three_after_a_play) {
     BO_EQUAL_INT(bo_boss_draw_count(run), -1);
     free(run);
 }
+
+BO_TEST(test_boss_debuffs_a_held_gold_card_at_the_end_of_the_round) {
+    BORun *run = make_run();
+    run->hand[run->hand_count] = bo_rules_new_playing_card(run, 2, BO_HEARTS);
+    run->hand[run->hand_count++].enhancement = BO_ENH_GOLD;
+    run->blind = BO_BL_HEAD;
+    bo_boss_set_blind(run);
+    BO_EXPECT(run->hand[0].debuffed);
+    run->chips = 1000;
+    bo_run_end_round(run);
+    // The blind is defeated after the money of the held cards, so the
+    // debuffed Gold Card gives nothing.
+    BO_EQUAL_INT(run->dollars, 10);
+    BO_EQUAL_INT(run->state, BO_STATE_ROUND_EVAL);
+    free(run);
+}

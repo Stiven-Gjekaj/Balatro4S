@@ -358,7 +358,6 @@ void bo_run_end_round(BORun *run) {
         run->state = BO_STATE_GAME_OVER;
         return;
     }
-    bo_boss_defeat(run);
     run->unused_discards += run->discards_left;
     if (blind->boss) {
         int best = BO_HAND_HIGH_CARD, played = -1, order = 100;
@@ -465,6 +464,9 @@ void bo_run_end_round(BORun *run) {
         if (steps > run->interest_cap / 5) steps = run->interest_cap / 5;
         add_eval_row(run, BO_EVAL_INTEREST, 0, steps, run->interest_amount * steps);
     }
+    // evaluate_round defeats the blind in an event, after the money of the
+    // held cards and of the jokers.
+    bo_boss_defeat(run);
     run->state = BO_STATE_ROUND_EVAL;
 }
 

@@ -23,6 +23,7 @@
 #include "bo_rules.h"
 #include "bo_tag.h"
 #include "bo_run.h"
+#include "bo_profile.h"
 #include "bo_save.h"
 #include "bo_score.h"
 #include "bo_ui.h"
@@ -70,6 +71,7 @@ enum {
     BO_ID_STAKE_NEXT,
     BO_ID_INFO_NEW_RUN,  // Run Info: leave this run for a new one.
     BO_ID_SETUP_BACK,    // The run setup: back to the run that is on.
+    BO_ID_UNLOCK_ALL,    // The run setup: unlock all cards, with a second tap.
     BO_ID_BACKGROUND,  // A tap on nothing: the focus goes away.
     BO_ID_HAND_CARD = 100,
     BO_ID_JOKER = 200,
@@ -180,6 +182,12 @@ static struct {
     char savePath[1024];    // save.b4s beside Balatro.love.
     BORun *saved;           // The run as the save file has it.
     int savedEndless;
+    BOProfile *profile;     // The profile of the player: profile.b4p.
+    BOProfile *savedProfile;
+    char profilePath[1024];
+    BOCenterId notice;      // A card that the profile unlocked, on the screen.
+    float noticeAge;
+    float unlockConfirm;    // Unlock All waits for a second tap this long.
     float blindTagX[2], blindTagY[2];  // The tags of the blind select.
 
     // A drag of a joker.
@@ -368,9 +376,20 @@ static void reset_views(void) {
     bo_motion_place(&G.multBox, 0, 0, 0);
 }
 
+// Writes the profile when it changed.
+static void save_profile(void) {
+    if (!G.profile || !G.profilePath[0]) return;
+    if (G.savedProfile && memcmp(G.savedProfile, G.profile, sizeof(BOProfile)) == 0) return;
+    if (!G.savedProfile) G.savedProfile = malloc(sizeof(BOProfile));
+    if (!G.savedProfile) return;
+    memcpy(G.savedProfile, G.profile, sizeof(BOProfile));
+    if (!bo_profile_write(G.profile, G.profilePath)) fprintf(stderr, "profile: cannot write %s\n", G.profilePath);
+}
+
 // Writes the run when it changed and no animation is on, as save_run.
 // A lost run has no save.
 static void autosave(void) {
+    save_profile();
     if (!G.savePath[0] || G.setup || G.flow != BO_FLOW_IDLE || G.dragging) return;
     if (G.saved && memcmp(G.saved, G.run, sizeof(BORun)) == 0 && G.savedEndless == G.endless) return;
     if (!G.saved) G.saved = malloc(sizeof(BORun));
@@ -472,9 +491,19 @@ int bo_game_start(const char *love_path, int width, int height) {
     G.run = calloc(1, sizeof(BORun));
     G.setupBack = BO_B_RED;
     G.setupStake = 1;
-    // The save is beside Balatro.love. A saved run goes on at once.
+    // The save and the profile are beside Balatro.love. A saved run goes on
+    // at once.
     const char *slash = strrchr(love_path, '/');
     if (slash) snprintf(G.savePath, sizeof(G.savePath), "%.*s/save.b4s", (int)(slash - love_path), love_path);
+    if (slash) {
+        snprintf(G.profilePath, sizeof(G.profilePath), "%.*s/profile.b4p", (int)(slash - love_path), love_path);
+    }
+    G.profile = malloc(sizeof(BOProfile));
+    if (G.profile) {
+        if (!G.profilePath[0] || !bo_profile_read(G.profile, G.profilePath)) bo_profile_init(G.profile);
+        bo_profile_set_active(G.profile);
+    }
+    G.notice = BO_CENTER_NONE;
     BOSaveExtra extra = {0};
     if (G.savePath[0] && bo_save_read(G.run, &extra, G.savePath)) {
         G.endless = extra.endless;
@@ -483,6 +512,8 @@ int bo_game_start(const char *love_path, int width, int height) {
         reset_views();
         if (G.run->state == BO_STATE_SELECTING || G.run->state == BO_STATE_PACK) sync_hand();
         fprintf(stderr, "save: resumed %s, ante %d\n", G.run->random.seed, G.run->ante);
+        BOUnlockArgs resumed = {.type = BO_UNLOCK_CONTINUE_GAME};
+        bo_profile_check(G.run, &resumed);
     } else {
         G.setup = 1;
         new_run();
@@ -1497,8 +1528,11 @@ static void draw_setup(void) {
     float cw = G.cardW * 1.3f, ch = G.cardH * 1.3f;
     float cx = inner.x + inner.w * 0.24f - cw / 2, cy = inner.y + G.height * 0.17f;
     const BOCenterInfo *back = bo_center(G.setupBack);
+    int locked = !bo_profile_unlocked(G.setupBack);
     draw_shadow(cx, cy, cw, ch);
-    draw_cell(&G.centers, 7, 5, back->pos_x, back->pos_y, cx, cy, cw, ch, bo_rgb(BO_C_WHITE));
+    // A locked deck shows the locked back at (4, 0).
+    draw_cell(&G.centers, 7, 5, locked ? 4 : back->pos_x, locked ? 0 : back->pos_y, cx, cy, cw, ch,
+              bo_rgb(BO_C_WHITE));
     float aw = G.width * 0.06f, ah = ch * 0.4f;
     if (bo_ui_button(BO_ID_SETUP_PREV, bo_rect(cx - aw - 14, cy + (ch - ah) / 2, aw, ah), BO_C_RED, "<", 1)) {
         G.setupBack = G.setupBack == BO_B_RED ? BO_B_ERRATIC : G.setupBack - 1;
@@ -1514,7 +1548,11 @@ static void draw_setup(void) {
     memset(&item, 0, sizeof(item));
     item.center = G.setupBack;
     BODescription d;
-    bo_describe_item(NULL, &item, &d);
+    if (locked) {
+        bo_describe_locked_back(G.setupBack, &d);
+    } else {
+        bo_describe_item(NULL, &item, &d);
+    }
     float tx = inner.x + inner.w * 0.47f, tw = inner.w * 0.49f;
     float line = G.height * 0.045f, pad = 10;
     BORect nameBox = bo_rect(tx, cy, tw, G.height * 0.08f);
@@ -1531,6 +1569,9 @@ static void draw_setup(void) {
     static const char *stakeKeys[8] = {"stake_white", "stake_red", "stake_green", "stake_black",
                                         "stake_blue", "stake_purple", "stake_orange", "stake_gold"};
     static const int chipPos[8][2] = {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {3, 0}, {0, 1}, {1, 1}, {2, 1}};
+    // The stakes over the best win of the deck plus one are locked.
+    int maxStake = bo_profile_max_stake(G.profile, G.setupBack);
+    if (G.setupStake > maxStake) G.setupStake = maxStake;
     int stake = G.setupStake;
     float sy = cy + ch + G.height * 0.075f, chip = G.height * 0.1f;
     float scx = cx + cw / 2 - chip / 2;
@@ -1538,10 +1579,10 @@ static void draw_setup(void) {
               bo_rgb(BO_C_WHITE));
     float sah = chip * 0.8f;
     if (bo_ui_button(BO_ID_STAKE_PREV, bo_rect(cx - aw - 14, sy + (chip - sah) / 2, aw, sah), BO_C_RED, "<", 1)) {
-        G.setupStake = stake == 1 ? 8 : stake - 1;
+        G.setupStake = stake == 1 ? maxStake : stake - 1;
     }
     if (bo_ui_button(BO_ID_STAKE_NEXT, bo_rect(cx + cw + 14, sy + (chip - sah) / 2, aw, sah), BO_C_RED, ">", 1)) {
-        G.setupStake = stake == 8 ? 1 : stake + 1;
+        G.setupStake = stake >= maxStake ? 1 : stake + 1;
     }
     char path[64];
     snprintf(path, sizeof(path), "descriptions.Stake.%s", stakeKeys[stake - 1]);
@@ -1570,8 +1611,22 @@ static void draw_setup(void) {
                      BO_C_ORANGE, "Back", 1)) {
         G.setup = 0;
     }
+    // Unlock All of the profile menu: the second tap unlocks.
+    if (G.profile && !G.profile->all_unlocked) {
+        float uw = inner.w * 0.2f;
+        const char *label = G.unlockConfirm > 0 ? "Sure?" : "Unlock All";
+        if (bo_ui_button(BO_ID_UNLOCK_ALL, bo_rect(inner.x + inner.w - uw - 14, inner.y + inner.h - bh - 14, uw, bh),
+                         G.unlockConfirm > 0 ? BO_C_RED : BO_C_GREY, label, 1)) {
+            if (G.unlockConfirm > 0) {
+                bo_profile_unlock_all(G.profile);
+                G.unlockConfirm = 0;
+            } else {
+                G.unlockConfirm = 3;
+            }
+        }
+    }
     if (bo_ui_button(BO_ID_SETUP_PLAY, bo_rect(inner.x + (inner.w - bw) / 2, inner.y + inner.h - bh - 14, bw, bh),
-                     BO_C_BLUE, "Play", 1)) {
+                     BO_C_BLUE, "Play", !locked)) {
         G.setup = 0;
         new_run();
     }
@@ -1967,6 +2022,34 @@ static void draw_run_info(void) {
 
 // --- The frame -------------------------------------------------------------
 
+// The alert of a card that the profile unlocked, at the top of the screen.
+static void draw_notice(double dt) {
+    if (!G.profile) return;
+    if (G.notice == BO_CENTER_NONE) {
+        G.notice = bo_profile_take_notice(G.profile);
+        G.noticeAge = 0;
+        if (G.notice == BO_CENTER_NONE) return;
+    }
+    G.noticeAge += (float)dt;
+    if (G.noticeAge > 3) {
+        G.notice = BO_CENTER_NONE;
+        return;
+    }
+    BOItem item;
+    memset(&item, 0, sizeof(item));
+    item.center = G.notice;
+    BODescription d;
+    bo_describe_item(NULL, &item, &d);
+    char text[96];
+    snprintf(text, sizeof(text), "Unlocked: %s", d.name);
+    float size = G.height * 0.05f, w = bo_font_width(text, size) + 40, h = size * 1.6f;
+    float slide = G.noticeAge < 0.3f ? G.noticeAge / 0.3f : G.noticeAge > 2.7f ? (3 - G.noticeAge) / 0.3f : 1;
+    float y = -h + (h + 10) * slide;
+    BORect box = bo_rect((G.width - w) / 2, y, w, h);
+    bo_ui_box(box, BO_C_ORANGE);
+    bo_font_draw(text, G.width / 2, y + h * 0.18f, size, bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
+}
+
 static void draw_popups(double dt) {
     for (int i = 0; i < 24; i++) {
         BOPopup *p = &G.popups[i];
@@ -2134,8 +2217,10 @@ void bo_game_frame(double dt) {
     bo_gfx_set_background((float)G.time, G.backSpinTime, G.backC, G.backL, G.backD, G.backContrast, G.backSpin);
     bo_gfx_begin(G.width, G.height, bo_rgb(0x3a5c4f));
     shake_room();
+    if (G.unlockConfirm > 0) G.unlockConfirm -= (float)dt;
     if (G.setup) {
         draw_setup();
+        draw_notice(dt);
         bo_gfx_flush();
         bo_ui_end();
         return;
@@ -2167,6 +2252,7 @@ void bo_game_frame(double dt) {
     handle_focus_taps();
     if (G.focus != BO_FOCUS_NONE) draw_focus();
     draw_popups(dt);
+    draw_notice(dt);
     if (G.showInfo) draw_run_info();
     bo_gfx_flush();
     bo_ui_end();

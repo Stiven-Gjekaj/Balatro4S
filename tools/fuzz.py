@@ -3,11 +3,11 @@
 (tools/oracle.sh score) and with Balatro4S (build/fuzz/scenario), and
 prints each scenario where the results are not the same.
 
-Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--pack] [--voucher] [--keep]
+Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--pack] [--voucher] [--blind] [--keep]
 With --use, each scenario uses a Tarot, Planet, or Spectral card on the hand
 in place of a play. With --pack, each scenario opens a booster pack in the
 shop and takes some of its cards. With --voucher, each scenario buys a
-voucher in the shop.
+voucher in the shop. With --blind, each play has a random blind.
 """
 
 import os
@@ -27,6 +27,10 @@ SEALS = ["Gold", "Red", "Blue", "Purple"]
 HANDS = ["Flush_Five", "Flush_House", "Five_of_a_Kind", "Straight_Flush", "Four_of_a_Kind", "Full_House",
          "Flush", "Straight", "Three_of_a_Kind", "Two_Pair", "Pair", "High_Card"]
 SUIT_NAMES = ["Spades", "Hearts", "Clubs", "Diamonds"]
+BLINDS = ["bl_arm", "bl_club", "bl_eye", "bl_final_acorn", "bl_final_bell", "bl_final_heart", "bl_final_leaf",
+          "bl_final_vessel", "bl_fish", "bl_flint", "bl_goad", "bl_head", "bl_hook", "bl_house", "bl_manacle",
+          "bl_mark", "bl_mouth", "bl_needle", "bl_ox", "bl_pillar", "bl_plant", "bl_psychic", "bl_serpent",
+          "bl_small", "bl_big", "bl_tooth", "bl_wall", "bl_water", "bl_wheel", "bl_window"]
 
 
 # To Do List picks its hand from pairs(G.GAME.hands). The LuaJIT of
@@ -220,6 +224,9 @@ def scenario(rng, jokers):
     held = [card(rng) for _ in range(rng.randint(0, 7))]
     if held:
         lines.append("hand " + " ".join(held))
+    if "--blind" in sys.argv:
+        lines.append("blind " + rng.choice(BLINDS))
+        lines.append("most_played " + rng.choice(HANDS))
     return "\n".join(lines) + "\n"
 
 

@@ -30,6 +30,8 @@
 --   choose 2 1 3          (take pack card 2, with cards 1 and 3 of the hand)
 --   skip                  (close the pack)
 --   redeem v_key          (buy a voucher in the shop, in place of a play)
+--   blind bl_key          (the blind of the round, before the play)
+--   most_played Pair      (current_round.most_played_poker_hand, for The Ox)
 -- A card is a key of P_CARDS, then an enhancement, an edition, and a seal.
 
 local dir, file = arg[1], arg[3]
@@ -104,7 +106,7 @@ local function set_ability(card, words)
     end
 end
 
-local plays, holds, use, pack, redeem = {}, {}, nil, nil, nil
+local plays, holds, use, pack, redeem, blind = {}, {}, nil, nil, nil, nil
 for _, w in ipairs(lines) do
     local key = w[1]
     if key == 'ante' then G.GAME.round_resets.ante = tonumber(w[2])
@@ -144,6 +146,9 @@ for _, w in ipairs(lines) do
         for i = 2, #w do G.deck:emplace(playing_card(w[i])) end
     elseif key == 'open' then pack = {key = w[2], steps = {}}
     elseif key == 'redeem' then redeem = w[2]
+    elseif key == 'blind' then blind = w[2]
+    elseif key == 'most_played' then
+        G.GAME.current_round.most_played_poker_hand = w[2]:gsub('_', ' ')
     elseif key == 'choose' or key == 'skip' then
         local step = {kind = key, picks = {}}
         for i = 3, #w do step.picks[#step.picks + 1] = tonumber(w[i]) end
@@ -399,6 +404,18 @@ if use then
     os.exit(0)
 end
 
+if blind then
+    -- The blind of the round, then Blind:press_play as the play starts.
+    G.STATE = G.STATES.SELECTING_HAND
+    G.CONTROLLER = {locks = {}, interrupt = {}, focused = {},
+                    save_cardarea_focus = function() end, recall_cardarea_focus = function() end}
+    CardArea.parse_highlighted = function() end
+    Card.highlight = function(self, on) self.highlighted = on end
+    G.GAME.blind:set_blind(G.P_BLINDS[blind])
+    B.manager:run_all()
+    G.GAME.blind:press_play()
+    B.manager:run_all()
+end
 -- play_cards_from_highlighted uses one hand before the score.
 G.GAME.current_round.hands_left = G.GAME.current_round.hands_left - 1
 
@@ -428,3 +445,12 @@ print('dollars ' .. G.GAME.dollars)
 print_jokers()
 print('consumables ' .. #G.consumeables.cards)
 print_levels()
+if blind then
+    local cards = {}
+    for _, c in ipairs(G.play.cards) do cards[#cards + 1] = ' ' .. card_text(c) .. (c.debuff and ':D' or '') end
+    cards[#cards + 1] = ' |'
+    for _, c in ipairs(G.hand.cards) do cards[#cards + 1] = ' ' .. card_text(c) .. (c.debuff and ':D' or '') end
+    print('cards' .. table.concat(cards))
+    print('round ' .. G.GAME.current_round.hands_left .. ' ' .. G.GAME.current_round.discards_left .. ' ' ..
+          G.hand.config.card_limit .. ' ' .. G.discard.config.card_count .. ' ' .. #G.discard.cards)
+end

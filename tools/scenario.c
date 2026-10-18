@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bo_boss.h"
 #include "bo_consume.h"
 #include "bo_eval.h"
 #include "bo_pool.h"
@@ -322,6 +323,7 @@ int main(int argc, char **argv) {
 
     BOCenterId useCenter = BO_CENTER_NONE, packCenter = BO_CENTER_NONE, redeemCenter = BO_CENTER_NONE;
     PackStep steps[MAX_STEPS];
+    int blindId = -1;
     int stepCount = 0;
     uint64_t useMask = 0;
     rewind(file);
@@ -379,6 +381,16 @@ int main(int argc, char **argv) {
                 parse_card(run, words[i], &run->deck[0]);
                 run->deck_count++;
             }
+        } else if (strcmp(key, "blind") == 0) {
+            for (int b = 0; b < BO_BLIND_COUNT; b++) {
+                if (strcmp(bo_blind_info((BOBlindId)b)->key, words[1]) == 0) blindId = b;
+            }
+        } else if (strcmp(key, "most_played") == 0) {
+            char name[32];
+            snprintf(name, sizeof(name), "%s", words[1]);
+            for (char *c = name; *c; c++) if (*c == '_') *c = ' ';
+            int type = bo_rules_hand_by_name(name);
+            if (type >= 0) run->most_played_hand = (BOHandType)type;
         } else if (strcmp(key, "redeem") == 0) {
             redeemCenter = bo_center_by_key(words[1]);
         } else if (strcmp(key, "open") == 0) {
@@ -413,6 +425,11 @@ int main(int argc, char **argv) {
         use_card(run, useCenter, useMask);
         return 0;
     }
+    if (blindId >= 0) {
+        run->blind = (BOBlindId)blindId;
+        bo_boss_set_blind(run);
+        bo_boss_press_play(run);
+    }
     run->hands_left--;
 
     BOScore score;
@@ -430,5 +447,22 @@ int main(int argc, char **argv) {
     print_jokers(run);
     printf("consumables %d\n", run->consumable_count);
     print_levels(run);
+    if (blindId >= 0) {
+        printf("cards");
+        for (int i = 0; i < run->play_count; i++) {
+            // A broken or destroyed card left the play.
+            if (run->play[i].shattered || run->play[i].destroyed) continue;
+            print_card(&run->play[i]);
+            if (run->play[i].debuffed) printf(":D");
+        }
+        printf(" |");
+        for (int i = 0; i < run->hand_count; i++) {
+            print_card(&run->hand[i]);
+            if (run->hand[i].debuffed) printf(":D");
+        }
+        printf("\n");
+        printf("round %d %d %d 0 %d\n", run->hands_left, run->discards_left, run->hand_size > 0 ? run->hand_size : 0,
+               run->discard_count);
+    }
     return 0;
 }

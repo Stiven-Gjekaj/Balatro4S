@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0 (2026-10-18)
+
+- The sounds and the music of Balatro. The five music tracks change with
+  the blind select, the boss blinds, the shop, and the packs, and the music
+  slows at a game over. The cards, the buttons, the score, the shop, the
+  packs, and the blinds play their sounds at the pitch of Balatro.
+- The settings set the volume, the music, and the sounds.
+- The ring/silent switch mutes the game.
+- Fix: a tap on an empty place in the collection does not show the text of
+  a card.
+
 ## 0.9.0 (2026-10-18)
 
 - The 20 challenges, with their rules, cards, and banned cards. The start

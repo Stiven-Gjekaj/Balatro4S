@@ -113,6 +113,8 @@ end
 
 local plays, holds, use, pack, redeem, blind, tags = {}, {}, nil, nil, nil, nil, {}
 local discard_picks, do_end_round = nil, false
+-- The chips of the blind, as tools/scenario.c starts them.
+local target = 300
 for _, w in ipairs(lines) do
     local key = w[1]
     if key == 'ante' then G.GAME.round_resets.ante = tonumber(w[2])
@@ -158,7 +160,7 @@ for _, w in ipairs(lines) do
         discard_picks = {}
         for i = 2, #w do discard_picks[#discard_picks + 1] = tonumber(w[i]) end
     elseif key == 'end_round' then do_end_round = true
-    elseif key == 'target' then G.GAME.blind.chips = tonumber(w[2])
+    elseif key == 'target' then target = tonumber(w[2])
     elseif key == 'most_played' then
         G.GAME.current_round.most_played_poker_hand = w[2]:gsub('_', ' ')
     elseif key == 'choose' or key == 'skip' then
@@ -494,6 +496,7 @@ if blind then
     G.GAME.blind:press_play()
     B.manager:run_all()
 end
+G.GAME.blind.chips = target
 if discard_picks then
     -- G.FUNCS.discard_cards_from_highlighted, then the draw.
     G.STATE = G.STATES.SELECTING_HAND

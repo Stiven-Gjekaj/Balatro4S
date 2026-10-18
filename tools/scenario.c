@@ -496,7 +496,7 @@ int main(int argc, char **argv) {
     if (hasDiscard) {
         // The discard and the draw, as bo_run_discard does them.
         bo_run_discard_cards(run, discardMask, 0);
-        bo_run_draw_cards(run, (run->hand_size > 0 ? run->hand_size : 0) - run->hand_count);
+        bo_run_fill_hand(run);
     }
     run->hands_left--;
 
@@ -515,6 +515,23 @@ int main(int argc, char **argv) {
     print_jokers(run);
     printf("consumables %d\n", run->consumable_count);
     print_levels(run);
+    if (blindId >= 0) {
+        printf("cards");
+        for (int i = 0; i < run->play_count; i++) {
+            // A broken or destroyed card left the play.
+            if (run->play[i].shattered || run->play[i].destroyed) continue;
+            print_card(&run->play[i]);
+            if (run->play[i].debuffed) printf(":D");
+        }
+        printf(" |");
+        for (int i = 0; i < run->hand_count; i++) {
+            print_card(&run->hand[i]);
+            if (run->hand[i].debuffed) printf(":D");
+        }
+        printf("\n");
+        printf("round %d %d %d 0 %d\n", run->hands_left, run->discards_left, run->hand_size > 0 ? run->hand_size : 0,
+               run->discard_count);
+    }
     if (doEndRound) {
         // A card that broke or was destroyed left G.playing_cards.
         int kept = 0;
@@ -542,23 +559,6 @@ int main(int argc, char **argv) {
         printf("consumables");
         for (int i = 0; i < run->consumable_count; i++) printf(" %s", bo_center(run->consumables[i].center)->key);
         printf("\n");
-    }
-    if (blindId >= 0) {
-        printf("cards");
-        for (int i = 0; i < run->play_count; i++) {
-            // A broken or destroyed card left the play.
-            if (run->play[i].shattered || run->play[i].destroyed) continue;
-            print_card(&run->play[i]);
-            if (run->play[i].debuffed) printf(":D");
-        }
-        printf(" |");
-        for (int i = 0; i < run->hand_count; i++) {
-            print_card(&run->hand[i]);
-            if (run->hand[i].debuffed) printf(":D");
-        }
-        printf("\n");
-        printf("round %d %d %d 0 %d\n", run->hands_left, run->discards_left, run->hand_size > 0 ? run->hand_size : 0,
-               run->discard_count);
     }
     return 0;
 }

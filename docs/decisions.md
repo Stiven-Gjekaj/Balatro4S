@@ -279,3 +279,16 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
 - **The sounds play at the events of the game, with the pitch and the
   volume of Balatro.** The ambient sounds of the fire and the organ are not
   in the game, because the game has no flames on the score yet.
+
+## The comparison for 1.0
+
+- **The text of each card agrees with the code of Balatro** (1.0,
+  2026-10-18). `tools/oracle.sh describe SEED` prints the text of the 266
+  jokers, consumables, vouchers, and packs with
+  `Card:generate_UIBox_ability_table` of Balatro. `tools/describe.c` prints
+  the same with `bo_describe`. The comparison found three faults: the
+  spaces in an X box, the last card of The Fool, and the number of
+  Misprint. The other differences come from the state of the run in the
+  harness, as the cards in the deck.
+- **All the fuzz modes agree before the release.** 300 cases of each of the
+  eight modes, 2400 cases, agree with Balatro.

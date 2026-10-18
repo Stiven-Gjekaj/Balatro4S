@@ -83,6 +83,29 @@ BO_TEST(test_tag_skip_moves_to_the_next_blind) {
     free(run);
 }
 
+BO_TEST(test_tag_each_investment_tag_gives_its_own_row) {
+    BORun *run = calloc(1, sizeof(BORun));
+    bo_run_start(run, "ABCDEFGH");
+    bo_tag_add(run, BO_TAG_INVESTMENT, BO_TAG_FROM_NONE);
+    bo_tag_add(run, BO_TAG_INVESTMENT, BO_TAG_FROM_NONE);
+    run->slot = BO_SLOT_BOSS;
+    bo_run_select_blind(run);
+    run->chips = run->blind_chips;
+    bo_run_end_round(run);
+    // evaluate_round adds a row for each tag, with the place of the tag.
+    int rows = 0;
+    for (int i = 0; i < run->eval.row_count; i++) {
+        const BOEvalRow *row = &run->eval.rows[i];
+        if (row->kind != BO_EVAL_TAG) continue;
+        BO_EQUAL_INT(row->index, rows);
+        BO_EQUAL_INT(row->dollars, 25);
+        rows++;
+    }
+    BO_EQUAL_INT(rows, 2);
+    BO_EQUAL_INT(run->tag_count, 0);
+    free(run);
+}
+
 BO_TEST(test_tag_juggle_gives_hand_size_for_one_round) {
     BORun *run = calloc(1, sizeof(BORun));
     bo_run_start(run, "ABCDEFGH");

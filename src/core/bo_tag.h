@@ -26,8 +26,9 @@ void bo_tag_immediate(BORun *run);
 // acted.
 int bo_tag_new_blind_choice(BORun *run);
 void bo_tag_round_start_bonus(BORun *run);
-// Investment Tag after a boss. Returns the dollars, or 0.
-int bo_tag_eval(BORun *run);
+// Investment Tag after a boss: each tag gives a row of money. Fills the
+// dollars and the place of each tag in run->tags, and returns the count.
+int bo_tag_eval(BORun *run, int *dollars, int *places, int max);
 void bo_tag_shop_start(BORun *run);
 // Rare Tag and Uncommon Tag make the card. Returns 1 when a tag made it.
 int bo_tag_store_joker_create(BORun *run, BOShopCard *out);

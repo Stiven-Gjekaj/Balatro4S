@@ -34,6 +34,7 @@ typedef enum {
     BO_SLOT_BOSS,
 } BOBlindSlot;
 
+#define BO_MAX_TAGS 32
 #define BO_EVAL_MAX_ROWS 16
 
 typedef enum {
@@ -202,7 +203,7 @@ typedef struct BORun {
     BORunState pack_return;  // G.GAME.PACK_INTERRUPT.
 
     // The tags that wait (G.GAME.tags), and the tags of the blinds.
-    BOTag tags[32];
+    BOTag tags[BO_MAX_TAGS];
     int tag_count;
     BOCenterId blind_tags[2];  // round_resets.blind_tags: Small and Big.
     int orbital_choices[3];    // The hand of an Orbital Tag of each blind.

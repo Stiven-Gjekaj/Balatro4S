@@ -462,8 +462,9 @@ void bo_run_end_round(BORun *run) {
         int dollars = bo_joker_dollar_bonus(run, &run->jokers[i], &has);
         if (has) add_eval_row(run, BO_EVAL_JOKER, i, 0, dollars);
     }
-    int investment = bo_tag_eval(run);
-    if (investment) add_eval_row(run, BO_EVAL_TAG, 0, 0, investment);
+    int tagDollars[BO_MAX_TAGS], tagPlaces[BO_MAX_TAGS];
+    int tagRows = bo_tag_eval(run, tagDollars, tagPlaces, BO_MAX_TAGS);
+    for (int i = 0; i < tagRows; i++) add_eval_row(run, BO_EVAL_TAG, tagPlaces[i], 0, tagDollars[i]);
     if (run->dollars >= 5) {
         int steps = run->dollars / 5;
         if (steps > run->interest_cap / 5) steps = run->interest_cap / 5;

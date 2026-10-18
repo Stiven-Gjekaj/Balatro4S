@@ -157,17 +157,18 @@ void bo_tag_round_start_bonus(BORun *run) {
     remove_triggered(run);
 }
 
-int bo_tag_eval(BORun *run) {
-    int dollars = 0;
-    for (int i = 0; i < run->tag_count; i++) {
+int bo_tag_eval(BORun *run, int *dollars, int *places, int max) {
+    int count = 0;
+    for (int i = 0; i < run->tag_count && count < max; i++) {
         BOTag *tag = &run->tags[i];
         if (tag->triggered || tag->center != BO_TAG_INVESTMENT) continue;
         if (!bo_blind_info(run->blind)->boss) continue;
-        dollars += (int)tag_number(tag->center, BO_F_DOLLARS);
+        dollars[count] = (int)tag_number(tag->center, BO_F_DOLLARS);
+        places[count++] = i;
         tag->triggered = 1;
     }
     remove_triggered(run);
-    return dollars;
+    return count;
 }
 
 void bo_tag_shop_start(BORun *run) {

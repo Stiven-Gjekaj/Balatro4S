@@ -80,6 +80,10 @@ void bo_gfx_set_background(float time, float spin_time, BOColor colour1, BOColor
 // both about the point (px, py). bo_gfx_transform(0, 1, 0, 0) stops it.
 void bo_gfx_transform(float angle, float scale, float px, float py);
 
+// The shake of the room: all the next sprites turn by angle about the middle
+// of the screen and move by (dx, dy). bo_gfx_begin stops it.
+void bo_gfx_room(float angle, float dx, float dy);
+
 BOColor bo_rgb(unsigned int hex);
 BOColor bo_rgba(unsigned int hex, float alpha);
 

@@ -140,6 +140,7 @@ void bo_gfx_begin(int width, int height, BOColor clear) {
     gScreenW = (float)width;
     gScreenH = (float)height;
     bo_gfx_transform(0, 1, 0, 0);
+    bo_gfx_room(0, 0, 0);
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &gMainFramebuffer);
     // The passes into other framebuffers come before the clear. A change of
     // framebuffer after the clear makes the GPU store and load the screen.
@@ -188,6 +189,20 @@ void bo_gfx_transform(float angle, float scale, float px, float py) {
     gTransform.py = py;
 }
 
+// The shake of the room: a turn about the middle of the screen and a move.
+static struct {
+    int on;
+    float c, s, dx, dy;
+} gRoom;
+
+void bo_gfx_room(float angle, float dx, float dy) {
+    gRoom.on = angle != 0 || dx != 0 || dy != 0;
+    gRoom.c = cosf(angle);
+    gRoom.s = sinf(angle);
+    gRoom.dx = dx;
+    gRoom.dy = dy;
+}
+
 static void push(GLuint texture, float u0, float v0, float u1, float v1,
                  float x, float y, float w, float h, float angle, BOColor tint) {
     if (texture != gCurrentTexture) {
@@ -215,6 +230,11 @@ static void push(GLuint texture, float u0, float v0, float u1, float v1,
             float dx = out[i].x - gTransform.px, dy = out[i].y - gTransform.py;
             out[i].x = gTransform.px + dx * gTransform.c - dy * gTransform.s;
             out[i].y = gTransform.py + dx * gTransform.s + dy * gTransform.c;
+        }
+        if (gRoom.on) {
+            float dx = out[i].x - gScreenW / 2, dy = out[i].y - gScreenH / 2;
+            out[i].x = gScreenW / 2 + dx * gRoom.c - dy * gRoom.s + gRoom.dx;
+            out[i].y = gScreenH / 2 + dx * gRoom.s + dy * gRoom.c + gRoom.dy;
         }
         out[i].u = corners[i][2];
         out[i].v = corners[i][3];
@@ -421,8 +441,8 @@ static void render_entry(BOCacheEntry *e) {
     BOEffectProgram *p = &gEffects[e->effect];
     bo_gfx_flush();
     // The slot is upright. The transform of the card applies when it draws.
-    int transformOn = gTransform.on;
-    gTransform.on = 0;
+    int transformOn = gTransform.on, roomOn = gRoom.on;
+    gTransform.on = gRoom.on = 0;
     glBindFramebuffer(GL_FRAMEBUFFER, gCacheFramebuffer);
     glViewport(0, 0, CACHE_SIZE, CACHE_SIZE);
     float sx, sy;
@@ -459,6 +479,7 @@ static void render_entry(BOCacheEntry *e) {
     glUniform2f(gScreenUniform, gScreenW, gScreenH);
     e->renderedAt = e->time;
     gTransform.on = transformOn;
+    gRoom.on = roomOn;
 }
 
 // Each frame, the two cards that waited longest render again.

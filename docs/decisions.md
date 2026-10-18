@@ -130,3 +130,28 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
   event.** A joker that is destroyed in a loop over the jokers stays in the
   list until the loop ends, as in the game, where the card leaves after its
   animation.
+
+## The vouchers, the blinds, and the tags
+
+- **The vouchers, the boss blinds, and the tags act as in Balatro** (0.5,
+  2026-10-18). `bo_voucher` ports `Card:redeem` and `Card:apply_to_run`.
+  `bo_boss` ports the Blind object of `blind.lua`. `bo_tag` ports
+  `Tag:apply_to_run` and `add_tag`. On the final code, `tools/fuzz.py`
+  gave these results:
+  - `--voucher`: 500 of 500 random vouchers agree.
+  - `--blind`: 1000 of 1000 random plays with a random blind agree. The
+    test covers `set_blind`, `press_play` (The Hook and The Tooth),
+    `debuff_hand`, and `modify_hand`.
+  - `--tag`: 1000 of 1000 random skips and the shops after them agree.
+- **The fuzzer does not test some tags.** The tags that open a pack or
+  reroll the boss use the screen of Balatro. The pack tests cover their
+  packs. The hand of an Orbital Tag comes from `pairs()` over the poker
+  hands, which LuaJIT orders in another way in each process, as for To Do
+  List. Balatro4S uses one fixed order.
+- **A debuffed joker leaves the deck.** `Card:set_debuff` calls
+  `remove_from_deck`, so a joker that Crimson Heart debuffs or that
+  perishes gives back its hand size, its slots, and its other effects.
+- **The draws, the debuffs, and the checks of the blind come at the time of
+  the events of Balatro.** For example, The Hook discards before the score,
+  The Tooth takes the money before the score, and The Ox sets the money to
+  $0 at once.

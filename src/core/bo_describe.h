@@ -44,6 +44,10 @@ int bo_describe_locked_back(int back, BODescription *out);
 // "Locked": the unlock text of the card, with its vars.
 int bo_describe_locked(int center, BODescription *out);
 
+// The name and the rules of a challenge, as challenge_description_tab:
+// the lines of v_text for its custom rules and its modifiers.
+int bo_describe_challenge(int index, BODescription *out);
+
 // The text of a card that is not discovered: undiscovered_joker and the
 // others of the "Other" descriptions.
 int bo_describe_undiscovered(int center, BODescription *out);

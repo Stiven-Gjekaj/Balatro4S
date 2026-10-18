@@ -1,3 +1,4 @@
+#include "bo_challenge_data.h"
 #include "bo_profile.h"
 #include "bo_describe.h"
 
@@ -633,4 +634,34 @@ int bo_describe_undiscovered(int center, BODescription *out) {
     BOVars vars;
     memset(&vars, 0, sizeof(vars));
     return fill_from(path, "text", &vars, out);
+}
+
+int bo_describe_challenge(int index, BODescription *out) {
+    memset(out, 0, sizeof(*out));
+    const BOChallengeInfo *ch = bo_challenge(index);
+    if (!ch) return 0;
+    char path[128];
+    snprintf(path, sizeof(path), "misc.challenge_names.%s", ch->id);
+    const char *name = gText ? bo_luatab_string(gText, path) : NULL;
+    snprintf(out->name, sizeof(out->name), "%s", name ? name : ch->name);
+    if (!gText) return 0;
+    for (int pass = 0; pass < 2; pass++) {
+        const BOChallengeRule *rules = pass == 0 ? ch->custom : ch->modifiers;
+        int count = pass == 0 ? ch->custom_count : ch->modifier_count;
+        for (int i = 0; i < count && out->line_count < BO_DESCRIBE_LINES; i++) {
+            snprintf(path, sizeof(path), "misc.v_text.%s_%s", pass == 0 ? "ch_c" : "ch_m", rules[i].id);
+            BOLuaValue *lines = bo_luatab_path(gText, path);
+            BOLuaValue *line = lines ? bo_luatab_item(lines, 0) : NULL;
+            if (!line || line->type != BO_LUA_STRING) continue;
+            BOVars vars;
+            memset(&vars, 0, sizeof(vars));
+            if (rules[i].text) {
+                var_text(&vars, rules[i].text);
+            } else {
+                var_number(&vars, rules[i].number);
+            }
+            fill_line(line->string, &vars, out->lines[out->line_count++], BO_DESCRIBE_LINE_LENGTH);
+        }
+    }
+    return 1;
 }

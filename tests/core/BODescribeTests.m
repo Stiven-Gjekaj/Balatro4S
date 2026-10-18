@@ -187,3 +187,18 @@ BO_TEST(test_describe_writes_the_unlock_and_undiscovered_texts) {
     bo_describe_set_text(NULL);
     bo_luatab_free(text);
 }
+
+BO_TEST(test_describe_writes_the_rules_of_a_challenge) {
+    BOLuaValue *text = bo_luatab_parse(
+        "return { misc = { challenge_names = { c_golden_needle_1 = 'Golden Needle' },\n"
+        "  v_text = { ch_c_discard_cost = { 'Discards each cost {C:money}$#1#{}' },\n"
+        "             ch_m_hands = { '{C:blue}#1#{} hands per round' } } } }");
+    bo_describe_set_text(text);
+    BODescription d;
+    BO_EXPECT(bo_describe_challenge(17, &d));
+    BO_EQUAL(@(d.name), @"Golden Needle");
+    BO_EQUAL(@(d.lines[0]), @"Discards each cost {C:money}$1{}");
+    BO_EQUAL(@(d.lines[1]), @"{C:blue}1{} hands per round");
+    bo_describe_set_text(NULL);
+    bo_luatab_free(text);
+}

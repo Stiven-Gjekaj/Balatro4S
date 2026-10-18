@@ -1299,6 +1299,7 @@ static void play_selected(void) {
     memcpy(G.hand, kept, sizeof(BOCardView) * keptCount);
     G.handCount = keptCount;
     G.nextEvent = 0;
+    G.scorePercent = 0.3f;
     G.flow = BO_FLOW_SCORE;
     G.wait = 0.7;
     G.focus = BO_FOCUS_NONE;
@@ -1415,6 +1416,27 @@ static void show_event(const BOScoreEvent *event) {
         break;
     }
     popup(text, x, y, color);
+    // card_eval_status_text: the sound of the kind, at a pitch that goes up
+    // with each card and joker.
+    const char *sound = "generic1";
+    float volume = 1;
+    switch (event->kind) {
+    case BO_EVENT_CHIPS: sound = "chips1"; break;
+    case BO_EVENT_MULT: sound = "multhit1"; break;
+    case BO_EVENT_XMULT: sound = "multhit2"; volume = 0.7f; break;
+    case BO_EVENT_DOLLARS: sound = "coin3"; break;
+    case BO_EVENT_DEBUFFED: sound = "cancel"; break;
+    default: break;
+    }
+    if (event->kind == BO_EVENT_BALANCED) {
+        // The Plasma Deck: two gongs and a Tarot sound.
+        bo_sound_play("gong", 0.94f, 0.3f);
+        bo_sound_play("gong", 0.94f * 1.5f, 0.2f);
+        bo_sound_play("tarot1", 1.5f, 1);
+    } else {
+        bo_sound_play(sound, 0.8f + G.scorePercent * 0.2f, volume);
+    }
+    G.scorePercent += 0.08f;
     // juice_up() with no arguments: 0.4, and a turn of 0.24 to a side.
     float side = (G.nextEvent & 1) ? 0.24f : -0.24f;
     if (event->chips != G.shownChips) bo_motion_juice(&G.chipsBox, 0.4f, side, G.time);
@@ -1437,6 +1459,9 @@ static void update_flow(double dt) {
                 G.play[i].tx = G.width + G.cardW;
                 G.play[i].selected = 0;
             }
+            // The hand total moves to the round score.
+            bo_sound_play("button", 0.9f, 0.6f);
+            if (G.score.total > 0) sound_later(0.4f, "chips2", 1, 1);
             G.flow = BO_FLOW_CLEAR;
             G.wait = 0.6;
         }

@@ -8,13 +8,14 @@ Objective-C, with OpenGL ES 2.0. You install it as a .deb package.
 
 This is a fan project. It is not from LocalThunk or Playstack.
 
-**The status:** early work. Version 0.7.0 plays a full run of 8 antes with
-the standard deck and the seeds of Balatro. It has the shop, all 150
+**The status:** early work. Version 0.8.0 plays a full run of 8 antes with
+each of the 15 decks at each of the 8 stakes, and the seeds of Balatro. It has the shop, all 150
 jokers, all Tarot, Planet, and Spectral cards, all booster packs, all
 vouchers, all tags, and all boss blinds. Each joker agrees with Balatro in
 its own tests. The editions and the background use the shaders of
-Balatro, and the cards move as in Balatro. The sounds, the other decks,
-the stakes, and the saves come in the next versions. The plan is in
+Balatro, and the cards move as in Balatro. The run saves itself, and the
+profile unlocks the cards as Balatro does. The sounds and the challenges
+come in the next versions. The plan is in
 [TODO.md](TODO.md), and the decisions and their reasons are in
 [docs/decisions.md](docs/decisions.md).
 
@@ -22,6 +23,7 @@ the stakes, and the saves come in the next versions. The plan is in
 <img src="assets/screenshots/shop.png" width="400" alt="The shop: Next Round, Reroll, two jokers for sale, a voucher, two packs, and the text of the Mime joker with a Buy button"> <img src="assets/screenshots/jokers.png" width="400" alt="A hand scores: the King adds 10 chips and the Joker adds 4 Mult">
 <img src="assets/screenshots/tarot.png" width="400" alt="The Magician with its text and the Use and Sell buttons, over a hand with two selected cards"> <img src="assets/screenshots/pack.png" width="400" alt="An open Spectral Pack: the text of Talisman with a Use button, and the hand under the pack">
 <img src="assets/screenshots/tags.png" width="400" alt="The blind select: the Small Blind is skipped, the Big Blind has its tag and a Skip Blind button, and the text of The Manacle shows under the boss"> <img src="assets/screenshots/arcana.png" width="400" alt="An open Arcana Pack over the purple background, with the hand in a fan under the pack">
+<img src="assets/screenshots/setup.png" width="400" alt="The New Run screen: the Magic Deck with its text, the White Stake, and the Play button"> <img src="assets/screenshots/collection.png" width="400" alt="The collection: the Jokers tab with the Joker discovered and the other jokers not discovered, and the text of the Joker">
 
 ## You need a copy of Balatro
 

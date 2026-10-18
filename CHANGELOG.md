@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 (2026-10-18)
+
+- A full run with the Red Deck: the blind select, the Small, Big, and Boss
+  blinds, and the antes 1 to 8, with the chip targets of Balatro.
+- The cash out: the reward of the blind, $1 for each hand that is left, and
+  the interest.
+- The win screen after the boss of ante 8, the endless mode, and the game
+  over screen.
+- The random numbers of Balatro. A seed gives the same deck, the same
+  hands, and the same bosses as in Balatro 1.0.1o.
+- The seed of the run shows in the side panel.
+- Sort the hand by rank or by suit.
+- The boss blinds have no effect yet. Their effects come in 0.5.
+
 ## 0.1.0 (2026-10-18)
 
 - The app reads the art and the font from `Balatro.love` on the phone. The

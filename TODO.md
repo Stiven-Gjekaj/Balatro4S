@@ -36,7 +36,7 @@ cards, 18 Spectral cards, 32 vouchers, 24 tags, 28 boss blinds, 15 decks,
 - Port the first 40 jokers.
 - Move the jokers into a new order with a drag.
 
-## 0.4: consumables and packs
+## 0.4: consumables and packs (done, 2026-10-18)
 
 - Add the consumable slots and the Use button.
 - Port the 22 Tarot cards.

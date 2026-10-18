@@ -130,8 +130,15 @@ return function(dir)
         self.children.back = self.children.back or Moveable(0, 0, 0, 0)
         if front then self.children.front = self.children.front or Moveable(0, 0, 0, 0) end
     end
-    function Card:start_dissolve() self.REMOVED = true; self:remove() end
-    function Card:shatter() self.REMOVED = true; self:remove() end
+    -- A card that dissolves or breaks leaves in an event, as after its
+    -- animation. A loop over the jokers that dissolves some of them sees
+    -- each joker.
+    local function remove_later(self)
+        self.REMOVED = true
+        G.E_MANAGER:add_event(Event({func = function() self:remove(); return true end}))
+    end
+    Card.start_dissolve = remove_later
+    function Card:shatter() self.shattered = true; remove_later(self) end
     -- Card:remove of Balatro runs, with no screen objects to remove.
     remove_all = nothing
     function CardArea:init(X, Y, W, H, config)

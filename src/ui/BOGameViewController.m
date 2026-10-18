@@ -32,11 +32,17 @@
     view.multipleTouchEnabled = NO;
     view.contentScaleFactor = [UIScreen mainScreen].scale;
     CAEAGLLayer *layer = (CAEAGLLayer *)view.layer;
-    // A layer that is not opaque goes through the compositor of iOS 6, so
-    // that RecTunnelX can read it from the framebuffer. An opaque layer
-    // goes to the screen by itself, and the capture is black. The frame
-    // rate stays at 60.
+#ifdef BO_CAPTURE
+    // The capture build: a layer that is not opaque goes through the
+    // compositor of iOS 6, so that RecTunnelX can read it from the
+    // framebuffer. The compositor costs time: a round runs at 40 frames
+    // per second in place of 60.
     layer.opaque = NO;
+#else
+    // An opaque layer goes to the screen by itself. The capture of
+    // RecTunnelX is then black.
+    layer.opaque = YES;
+#endif
     layer.drawableProperties = @{kEAGLDrawablePropertyRetainedBacking: @NO,
                                  kEAGLDrawablePropertyColorFormat: kEAGLColorFormatRGBA8};
     self.view = view;

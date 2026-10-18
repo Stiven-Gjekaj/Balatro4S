@@ -1,13 +1,20 @@
 #!/bin/sh
 # Build Balatro4S.app into build/.
-# Usage: scripts/app.sh [--debug]
+# Usage: scripts/app.sh [--debug] [--capture]
 # With --debug, the app reads commands from /tmp/Balatro4S.cmd (see src/game/bo_debug.c).
+# With --capture, RecTunnelX can record the game, at a lower frame rate
+# (see src/ui/BOGameViewController.m).
 set -e
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 APP="$ROOT/build/Balatro4S.app"
 DEBUG=""
-if [ "$1" = "--debug" ]; then DEBUG="-DBO_DEBUG"; fi
+for arg in "$@"; do
+    case "$arg" in
+        --debug) DEBUG="$DEBUG -DBO_DEBUG" ;;
+        --capture) DEBUG="$DEBUG -DBO_CAPTURE" ;;
+    esac
+done
 rm -rf "$APP"
 mkdir -p "$APP"
 

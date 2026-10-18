@@ -49,6 +49,7 @@ BO_TEST(test_run_beats_a_blind_and_cashes_out) {
     BO_EQUAL_INT(run->eval.interest, 0);
     bo_run_cash_out(run);
     BO_EQUAL_INT(run->dollars, 10);
+    BO_EQUAL_INT(run->chips, 0);
     BO_EQUAL_INT(run->deck_count, 52);
     BO_EQUAL_INT(run->slot, BO_SLOT_BIG);
     BO_EQUAL_INT(run->state, BO_STATE_BLIND_SELECT);

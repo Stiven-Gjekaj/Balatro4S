@@ -190,6 +190,7 @@ int bo_run_discard(BORun *run, uint64_t mask) {
 void bo_run_cash_out(BORun *run) {
     if (run->state != BO_STATE_ROUND_EVAL) return;
     run->dollars += run->eval.total;
+    run->chips = 0;
     // All the cards go back to the deck.
     for (int i = 0; i < run->discard_count; i++) run->deck[run->deck_count++] = run->discard[i];
     run->discard_count = 0;

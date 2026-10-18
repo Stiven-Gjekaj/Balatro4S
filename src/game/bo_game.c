@@ -516,11 +516,17 @@ static void draw_shadow(float x, float y, float w, float h) {
     bo_gfx_round_rect(x + G.cardW * 0.04f, y + G.cardH * 0.04f, w, h, G.cardW * 0.06f, bo_rgba(0x000000, 0.25f));
 }
 
+// The back of the deck of the run, from its pos in Enhancers.png.
+static void draw_back(float x, float y, float w, float h) {
+    const BOCenterInfo *back = bo_center(G.run->back);
+    int col = back ? back->pos_x : 0, row = back ? back->pos_y : 0;
+    draw_cell(&G.centers, 7, 5, col, row, x, y, w, h, bo_rgb(BO_C_WHITE));
+}
+
 static void draw_playing_card(const BOCard *card, float x, float y, float w, float h) {
     draw_shadow(x, y, w, h);
     if (card->face_down) {
-        // The Red Deck back, at (0, 0) in Enhancers.png.
-        draw_cell(&G.centers, 7, 5, 0, 0, x, y, w, h, bo_rgb(BO_C_WHITE));
+        draw_back(x, y, w, h);
         return;
     }
     const BOCenterInfo *center = bo_center(bo_rules_enhancement_center(card->enhancement));
@@ -550,7 +556,7 @@ static void draw_item(const BOItem *item, float x, float y, float w, float h) {
     if (!c) return;
     draw_shadow(x, y, w, h);
     if (item->face_down) {
-        draw_cell(&G.centers, 7, 5, 0, 0, x, y, w, h, bo_rgb(BO_C_WHITE));
+        draw_back(x, y, w, h);
         return;
     }
     BOColor white = bo_rgb(BO_C_WHITE);
@@ -625,12 +631,9 @@ static void draw_held_tags(void) {
 static void draw_deck(void) {
     float x = deck_x(), y = hand_top();
     int count = G.run->deck_count;
-    // The Red Deck back is at (0, 0) in Enhancers.png. A few cards under it
-    // show the height of the pile.
+    // A few cards under the top show the height of the pile.
     int layers = count > 0 ? 1 + count / 13 : 0;
-    for (int i = layers - 1; i >= 0; i--) {
-        draw_cell(&G.centers, 7, 5, 0, 0, x - i * 2, y - i * 2, G.cardW, G.cardH, bo_rgb(BO_C_WHITE));
-    }
+    for (int i = layers - 1; i >= 0; i--) draw_back(x - i * 2, y - i * 2, G.cardW, G.cardH);
     // The run keeps each card in the deck, the hand, or the discard pile.
     int total = count + G.run->hand_count + G.run->discard_count;
     char text[16];

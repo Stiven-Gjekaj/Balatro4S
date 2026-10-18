@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0 (2026-10-18)
+
+- The text of each card agrees with Balatro. A new tool compares the text of
+  the 266 jokers, consumables, vouchers, and packs with the code of
+  Balatro.
+- The Fool shows the last Tarot or Planet card, or None.
+- Misprint shows a Mult number that changes, as in Balatro.
+- Fix: an X Mult box has no spaces in it.
+
 ## 0.10.1 (2026-10-18)
 
 - The icon has the rounded corners and the gloss of iOS 6, also in Cydia.

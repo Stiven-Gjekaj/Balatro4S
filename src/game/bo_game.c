@@ -68,6 +68,8 @@ enum {
     BO_ID_SETUP_PLAY,
     BO_ID_STAKE_PREV,
     BO_ID_STAKE_NEXT,
+    BO_ID_INFO_NEW_RUN,  // Run Info: leave this run for a new one.
+    BO_ID_SETUP_BACK,    // The run setup: back to the run that is on.
     BO_ID_BACKGROUND,  // A tap on nothing: the focus goes away.
     BO_ID_HAND_CARD = 100,
     BO_ID_JOKER = 200,
@@ -1492,7 +1494,7 @@ static void draw_setup(void) {
     bo_font_draw("New Run", inner.x + inner.w / 2, inner.y + G.height * 0.02f, G.height * 0.08f,
                  bo_rgb(BO_C_WHITE), BO_ALIGN_CENTER);
     // The deck, between the two arrows.
-    float cw = G.cardW * 1.5f, ch = G.cardH * 1.5f;
+    float cw = G.cardW * 1.3f, ch = G.cardH * 1.3f;
     float cx = inner.x + inner.w * 0.24f - cw / 2, cy = inner.y + G.height * 0.17f;
     const BOCenterInfo *back = bo_center(G.setupBack);
     draw_shadow(cx, cy, cw, ch);
@@ -1530,7 +1532,7 @@ static void draw_setup(void) {
                                         "stake_blue", "stake_purple", "stake_orange", "stake_gold"};
     static const int chipPos[8][2] = {{0, 0}, {1, 0}, {2, 0}, {4, 0}, {3, 0}, {0, 1}, {1, 1}, {2, 1}};
     int stake = G.setupStake;
-    float sy = inner.y + inner.h * 0.58f, chip = G.height * 0.1f;
+    float sy = cy + ch + G.height * 0.075f, chip = G.height * 0.1f;
     float scx = cx + cw / 2 - chip / 2;
     draw_cell(&G.stakes, 5, 2, chipPos[stake - 1][0], chipPos[stake - 1][1], scx, sy, chip, chip,
               bo_rgb(BO_C_WHITE));
@@ -1562,6 +1564,12 @@ static void draw_setup(void) {
     }
 
     float bw = inner.w * 0.34f, bh = G.height * 0.11f;
+    // A run that is not over can go on.
+    if (G.run->state != BO_STATE_GAME_OVER &&
+        bo_ui_button(BO_ID_SETUP_BACK, bo_rect(inner.x + 14, inner.y + inner.h - bh - 14, inner.w * 0.18f, bh),
+                     BO_C_ORANGE, "Back", 1)) {
+        G.setup = 0;
+    }
     if (bo_ui_button(BO_ID_SETUP_PLAY, bo_rect(inner.x + (inner.w - bw) / 2, inner.y + inner.h - bh - 14, bw, bh),
                      BO_C_BLUE, "Play", 1)) {
         G.setup = 0;
@@ -1946,9 +1954,15 @@ static void draw_run_info(void) {
         bo_font_draw(text, row.x + row.w - 10, row.y + row.h * 0.18f, size, bo_rgb(BO_C_ORANGE), BO_ALIGN_RIGHT);
         y += rowH;
     }
-    // Any tap closes the screen.
+    // Any tap closes the screen. The New Run button is over that area.
     bo_ui_area(BO_ID_RUN_INFO + 1000, bo_rect(0, 0, G.width, G.height));
     if (bo_ui_clicked(BO_ID_RUN_INFO + 1000)) G.showInfo = 0;
+    float bw = box.w * 0.22f, bh = rowH * 0.9f;
+    if (bo_ui_button(BO_ID_INFO_NEW_RUN, bo_rect(box.x + box.w - bw - 12, box.y + 8, bw, bh), BO_C_RED, "New Run",
+                     1)) {
+        G.showInfo = 0;
+        G.setup = 1;
+    }
 }
 
 // --- The frame -------------------------------------------------------------

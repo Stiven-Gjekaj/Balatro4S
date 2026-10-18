@@ -41,8 +41,10 @@ int bo_font_load(const unsigned char *ttf, size_t size, float pixels) {
     gLineHeight = ceilf((float)(ascent + descent));
     float widest = 0;
     for (int i = 0; i < BO_CHARS; i++) widest = fmaxf(widest, (float)advances[i].width);
-    gCellWidth = ceilf(widest) + 2;
-    float cellHeight = gLineHeight + 2;
+    // A wide margin around each cell. A glyph can go past its line box, and
+    // the linear filter reads one texel past the edge of a cell.
+    gCellWidth = ceilf(widest) + 8;
+    float cellHeight = gLineHeight + 16;
     int rows = (BO_CHARS + BO_COLUMNS - 1) / BO_COLUMNS;
     int width = (int)(gCellWidth * BO_COLUMNS), height = (int)(cellHeight * rows);
 
@@ -50,8 +52,8 @@ int bo_font_load(const unsigned char *ttf, size_t size, float pixels) {
     CGContextRef context = CGBitmapContextCreate(alpha, width, height, 8, width, NULL, kCGImageAlphaOnly);
     CGContextSetGrayFillColor(context, 1, 1);
     for (int i = 0; i < BO_CHARS; i++) {
-        float cx = (float)(i % BO_COLUMNS) * gCellWidth + 1;
-        float cy = (float)(i / BO_COLUMNS) * cellHeight + 1;
+        float cx = (float)(i % BO_COLUMNS) * gCellWidth + 4;
+        float cy = (float)(i / BO_COLUMNS) * cellHeight + 8;
         gGlyphs[i].x = cx;
         gGlyphs[i].y = cy;
         gGlyphs[i].advance = (float)advances[i].width;
@@ -94,8 +96,8 @@ float bo_font_draw(const char *text, float x, float y, float height, BOColor col
     for (const char *p = text; *p; p++) {
         const BOGlyph *g = glyph_for(*p);
         if (*p != ' ') {
-            bo_gfx_sprite(&gTexture, g->x, g->y, gCellWidth - 1, gLineHeight, x, y, (gCellWidth - 1) * scale,
-                          height, 0, color);
+            bo_gfx_sprite(&gTexture, g->x - 2, g->y - 4, gCellWidth - 4, gLineHeight + 8, x - 2 * scale,
+                          y - 4 * scale, (gCellWidth - 4) * scale, height + 8 * scale, 0, color);
         }
         x += g->advance * scale;
     }

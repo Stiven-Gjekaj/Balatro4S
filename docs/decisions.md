@@ -101,3 +101,32 @@ Each entry gives the reason. The owner made these choices on 2026-10-18.
   that run after the score. Balatro4S keeps the money in
   `pending_dollars` until the hand ends, so that Bull and Bootstraps see
   the same money as in Balatro.
+
+## The consumables and the packs
+
+- **Each Tarot, Planet, and Spectral card acts as in Balatro** (0.4,
+  2026-10-18). `bo_consume` ports `Card:use_consumeable` and
+  `Card:can_use_consumeable`. `tools/fuzz.py --use` uses random cards on
+  random hands with random jokers, in this code and in the code of
+  Balatro. 2000 of 2000 cases give the same hand, jokers, consumables,
+  money, and hand levels.
+- **Each booster pack opens as in Balatro.** `bo_pack` ports `Card:open`,
+  the choice of a card in a pack, `G.FUNCS.skip_booster`, and
+  `G.FUNCS.end_consumeable`. `tools/fuzz.py --pack` opens random packs. 2000
+  of 2000 cases give the same cards and the same state after the choices.
+- **The events of Balatro set the order of some steps.** Balatro runs many
+  steps in events after the code that adds them. Balatro4S runs each step
+  at once, in the order of the events. Some examples:
+  - The Fool makes the card that was used before it. The new
+    `last_tarot_planet` comes after the events of The Fool.
+  - Hallucination tests its chance when a pack opens, but its Tarot card
+    comes after the cards of the pack.
+  - The jokers see the cards that The Hanged Man removes before the cards
+    break, so Glass Joker gets no shattered card from them.
+- **A bigger hand draws its new cards at once.** `CardArea:change_size`
+  draws cards while the hand is on. For example, Hex can destroy Merry
+  Andy, and then the hand gets one more card.
+- **The headless Balatro of the tests removes a dissolved card in an
+  event.** A joker that is destroyed in a loop over the jokers stays in the
+  list until the loop ends, as in the game, where the card leaves after its
+  animation.

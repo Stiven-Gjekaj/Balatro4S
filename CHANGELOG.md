@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0 (2026-10-18)
+
+- Each of the 149 jokers agrees with Balatro in its own tests: 1490 plays,
+  1490 rounds with a discard, and 894 rounds with a random blind. To Do
+  List cannot be compared, because Balatro itself picks its hand in another
+  order in each start of the game.
+- Fix: a discard of no card uses no discard.
+- Fix: the blind is defeated after the held Gold cards and the jokers pay,
+  so a debuffed Gold card gives no money.
+- Fix: a draw of no card does not sort the hand.
+- The Foil, Holographic, Polychrome, and Negative editions, the shine of
+  the vouchers, the packs, the Spectral cards, and the Gold Seal use the
+  shaders of Balatro, at 60 frames per second.
+
 ## 0.5.0 (2026-10-18)
 
 - The 28 boss blinds and the 5 final boss blinds act as in Balatro. The

@@ -471,8 +471,12 @@ void bo_eval_blind_modify_hand(BORun *run, BOScore *score) {
     bo_boss_modify_hand(run, &score->mult, &score->chips);
 }
 
-// The decks come in 0.8. Until then, the Red Deck has no last step.
+// Back:trigger_effect with final_scoring_step: the Plasma Deck balances the
+// chips and the mult.
 void bo_eval_deck_final_step(BORun *run, BOScore *score) {
-    (void)run;
-    (void)score;
+    if (run->back != BO_B_PLASMA) return;
+    double total = score->chips + score->mult;
+    score->chips = floor(total / 2);
+    score->mult = floor(total / 2);
+    bo_score_add_event(score, BO_EVENT_BALANCED, BO_AREA_PLAY, 0, 0);
 }

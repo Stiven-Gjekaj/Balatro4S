@@ -13,6 +13,7 @@
 #include "bo_pool.h"
 #include "bo_rules.h"
 #include "bo_tag.h"
+#include "bo_voucher.h"
 
 #pragma STDC FP_CONTRACT OFF
 
@@ -170,16 +171,105 @@ static void reset_round_cards(BORun *run) {
     }
 }
 
+// G.GAME.starting_params: the values that start_run gives to the run after
+// the deck and the stake change them.
+typedef struct {
+    int hands, discards, dollars, hand_size, joker_slots, consumable_slots;
+    int no_faces, erratic;
+} BOStartParams;
+
+// Back:apply_to_run: the starting params and the modifiers of the deck.
+// The vouchers of the deck act at once, as Card.apply_to_run.
+static void apply_back(BORun *run, BOStartParams *p) {
+    BOCenterId vouchers[3];
+    int voucherCount = 0;
+    switch (run->back) {
+    case BO_B_RED: p->discards++; break;
+    case BO_B_BLUE: p->hands++; break;
+    case BO_B_YELLOW: p->dollars += 10; break;
+    case BO_B_GREEN:
+        run->money_per_hand = 2;
+        run->money_per_discard = 1;
+        run->no_interest = 1;
+        break;
+    case BO_B_BLACK:
+        p->hands--;
+        p->joker_slots++;
+        break;
+    case BO_B_MAGIC: vouchers[voucherCount++] = BO_V_CRYSTAL_BALL; break;
+    case BO_B_NEBULA:
+        vouchers[voucherCount++] = BO_V_TELESCOPE;
+        p->consumable_slots--;
+        break;
+    case BO_B_GHOST: run->spectral_rate = 2; break;
+    case BO_B_ABANDONED: p->no_faces = 1; break;
+    case BO_B_ZODIAC:
+        vouchers[voucherCount++] = BO_V_TAROT_MERCHANT;
+        vouchers[voucherCount++] = BO_V_PLANET_MERCHANT;
+        vouchers[voucherCount++] = BO_V_OVERSTOCK_NORM;
+        break;
+    case BO_B_PAINTED:
+        p->hand_size += 2;
+        p->joker_slots--;
+        break;
+    case BO_B_PLASMA: run->ante_scaling = 2; break;
+    case BO_B_ERRATIC: p->erratic = 1; break;
+    default: break;
+    }
+    for (int i = 0; i < voucherCount; i++) {
+        run->used_vouchers[vouchers[i]] = 1;
+        bo_voucher_apply(run, vouchers[i]);
+    }
+}
+
+// The consumables that the Magic Deck and the Ghost Deck give. Balatro makes
+// them in an event, with create_card and a forced key.
+static void back_consumables(BORun *run) {
+    BOCenterId gifts[2];
+    int count = 0;
+    if (run->back == BO_B_MAGIC) gifts[count++] = BO_C_FOOL, gifts[count++] = BO_C_FOOL;
+    if (run->back == BO_B_GHOST) gifts[count++] = BO_C_HEX;
+    for (int i = 0; i < count; i++) {
+        BOItem item = bo_run_create_item(run, BO_SET_TAROT, 0, 0, 0, gifts[i], "deck", 0);
+        bo_run_add_consumable(run, &item);
+    }
+}
+
+// Checkered Deck: the Clubs become Spades and the Diamonds become Hearts.
+static void checkered_suits(BORun *run) {
+    BOCard *areas[4] = {run->deck, run->hand, run->play, run->discard};
+    int counts[4] = {run->deck_count, run->hand_count, run->play_count, run->discard_count};
+    for (int a = 0; a < 4; a++) {
+        for (int i = 0; i < counts[a]; i++) {
+            if (areas[a][i].suit == BO_CLUBS) areas[a][i].suit = BO_SPADES;
+            if (areas[a][i].suit == BO_DIAMONDS) areas[a][i].suit = BO_HEARTS;
+        }
+    }
+}
+
+void bo_run_apply_back(BORun *run, BOCenterId back) {
+    BOStartParams p;
+    memset(&p, 0, sizeof(p));
+    run->back = back;
+    apply_back(run, &p);
+    back_consumables(run);
+    if (back == BO_B_CHECKERED) checkered_suits(run);
+}
+
 void bo_run_start(BORun *run, const char *seed) {
+    bo_run_start_deck(run, seed, BO_B_RED, 1);
+}
+
+void bo_run_start_deck(BORun *run, const char *seed, BOCenterId back, int stake) {
     memset(run, 0, sizeof(*run));
     bo_random_start(&run->random, seed);
-    run->stake = 1;
+    run->back = back;
+    run->stake = stake;
+    run->ante_scaling = 1;
+    run->money_per_hand = 1;
     run->win_ante = 8;
     run->ante = 1;
     run->hand_size = 8;
-    run->hands_per_round = 4;
-    // The Red Deck gives one more discard than the 3 of the start.
-    run->discards_per_round = 3 + 1;
     run->dollars = 4;
     run->interest_cap = 25;
     run->interest_amount = 1;
@@ -193,7 +283,6 @@ void bo_run_start(BORun *run, const char *seed) {
     run->joker_slots = 5;
     run->consumable_slots = 2;
     run->shop_joker_max = 2;
-    run->starting_deck_size = 52;
     run->voucher = BO_CENTER_NONE;
     run->last_tarot_planet = BO_CENTER_NONE;
     run->ecto_minus = 1;
@@ -212,6 +301,14 @@ void bo_run_start(BORun *run, const char *seed) {
         // The three secret hands show only after the first play.
         run->hands[i].visible = !(i == BO_HAND_FLUSH_FIVE || i == BO_HAND_FLUSH_HOUSE || i == BO_HAND_FIVE_OF_A_KIND);
     }
+    BOStartParams p = {4, 3, 4, 8, 5, 2, 0, 0};
+    apply_back(run, &p);
+    run->hands_per_round = p.hands;
+    run->discards_per_round = p.discards;
+    run->dollars = p.dollars;
+    run->hand_size = p.hand_size;
+    run->joker_slots += p.joker_slots - 5;
+    run->consumable_slots += p.consumable_slots - 2;
 
     // The order of start_run: the boss, the voucher, the two tags, the deck,
     // the first shuffle, then the cards of the round.
@@ -219,17 +316,36 @@ void bo_run_start(BORun *run, const char *seed) {
     run->voucher = bo_pool_next_voucher(run, 0);
     run->blind_tags[0] = bo_pool_next_tag(run, NULL);
     run->blind_tags[1] = bo_pool_next_tag(run, NULL);
-    for (int s = 0; s < 4; s++) {
-        for (int r = 0; r < 13; r++) {
-            BOCard card = bo_card_make(kRankOrder[r], (BOSuit)kSuitOrder[s]);
-            card.uid = bo_run_new_sort_id(run);
-            run->deck[run->deck_count++] = card;
+    // The protos of the cards, in the order of the keys of P_CARDS. The
+    // Erratic Deck takes a random key for each of the 52, then sorts them.
+    int protos[52], protoCount = 0;
+    for (int i = 0; i < 52; i++) {
+        int index = i;
+        if (p.erratic) index = bo_random_index(&run->random, bo_pseudoseed(&run->random, "erratic"), 52);
+        int rank = kRankOrder[index % 13];
+        if (p.no_faces && (rank == BO_JACK || rank == BO_QUEEN || rank == BO_KING)) continue;
+        protos[protoCount++] = index;
+    }
+    for (int i = 1; i < protoCount; i++) {
+        for (int j = i; j > 0 && protos[j - 1] > protos[j]; j--) {
+            int t = protos[j];
+            protos[j] = protos[j - 1];
+            protos[j - 1] = t;
         }
     }
+    for (int i = 0; i < protoCount; i++) {
+        BOCard card = bo_card_make(kRankOrder[protos[i] % 13], (BOSuit)kSuitOrder[protos[i] / 13]);
+        card.uid = bo_run_new_sort_id(run);
+        run->deck[run->deck_count++] = card;
+    }
+    run->starting_deck_size = run->deck_count;
     run->hands_left = run->hands_per_round;
     run->discards_left = run->discards_per_round;
     shuffle_deck(run, "shuffle");
     reset_round_cards(run);
+    // The events of Back:apply_to_run come after start_run.
+    back_consumables(run);
+    if (run->back == BO_B_CHECKERED) checkered_suits(run);
     run->slot = BO_SLOT_SMALL;
     run->state = BO_STATE_BLIND_SELECT;
     bo_tag_orbital_choices(run);
@@ -243,7 +359,7 @@ BOBlindId bo_run_slot_blind(const BORun *run, BOBlindSlot slot) {
 
 double bo_run_slot_chips(const BORun *run, BOBlindSlot slot) {
     int scaling = run->stake >= 6 ? 3 : run->stake >= 3 ? 2 : 1;
-    return bo_blind_amount(run->ante, scaling) * bo_blind_info(bo_run_slot_blind(run, slot))->mult;
+    return bo_blind_amount(run->ante, scaling) * bo_blind_info(bo_run_slot_blind(run, slot))->mult * run->ante_scaling;
 }
 
 static BOContext context_for(BOContextKind kind) {
@@ -457,7 +573,12 @@ void bo_run_end_round(BORun *run) {
     memset(&run->eval, 0, sizeof(run->eval));
     // Mr. Bones saved the run: the blind gives no money.
     add_eval_row(run, BO_EVAL_BLIND, 0, 0, run->chips >= run->blind_chips ? run->blind_dollars : 0);
-    if (run->hands_left > 0) add_eval_row(run, BO_EVAL_HANDS, 0, run->hands_left, run->hands_left);
+    if (run->hands_left > 0) {
+        add_eval_row(run, BO_EVAL_HANDS, 0, run->hands_left, run->hands_left * run->money_per_hand);
+    }
+    if (run->discards_left > 0 && run->money_per_discard) {
+        add_eval_row(run, BO_EVAL_DISCARDS, 0, run->discards_left, run->discards_left * run->money_per_discard);
+    }
     for (int i = 0; i < run->joker_count; i++) {
         int has = 0;
         int dollars = bo_joker_dollar_bonus(run, &run->jokers[i], &has);
@@ -466,7 +587,7 @@ void bo_run_end_round(BORun *run) {
     int tagDollars[BO_MAX_TAGS], tagPlaces[BO_MAX_TAGS];
     int tagRows = bo_tag_eval(run, tagDollars, tagPlaces, BO_MAX_TAGS);
     for (int i = 0; i < tagRows; i++) add_eval_row(run, BO_EVAL_TAG, tagPlaces[i], 0, tagDollars[i]);
-    if (run->dollars >= 5) {
+    if (run->dollars >= 5 && !run->no_interest) {
         int steps = run->dollars / 5;
         if (steps > run->interest_cap / 5) steps = run->interest_cap / 5;
         add_eval_row(run, BO_EVAL_INTEREST, 0, steps, run->interest_amount * steps);
@@ -474,6 +595,8 @@ void bo_run_end_round(BORun *run) {
     // evaluate_round defeats the blind in an event, after the money of the
     // held cards and of the jokers.
     bo_boss_defeat(run);
+    // Anaglyph Deck: a Double Tag after a boss, in an event after the defeat.
+    if (run->back == BO_B_ANAGLYPH && blind->boss) bo_tag_add(run, BO_TAG_DOUBLE, BO_TAG_FROM_NONE);
     run->state = BO_STATE_ROUND_EVAL;
 }
 

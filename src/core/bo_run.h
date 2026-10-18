@@ -84,6 +84,11 @@ typedef struct {
 typedef struct BORun {
     BORandom random;
     BORunState state;
+    BOCenterId back;       // The deck, as BO_B_RED.
+    double ante_scaling;   // starting_params.ante_scaling: 2 for the Plasma Deck.
+    int no_interest;       // modifiers.no_interest: the Green Deck.
+    int money_per_hand;    // modifiers.money_per_hand or 1.
+    int money_per_discard; // modifiers.money_per_discard or 0.
     int stake;
     int win_ante;
     int won;
@@ -219,6 +224,15 @@ typedef struct BORun {
 // Starts a run of the Red Deck at stake 1 with seed, for example
 // "ABCDEFGH".
 void bo_run_start(BORun *run, const char *seed);
+
+// Starts a run with a deck (a center of the Back set) at a stake from 1 to
+// 8, as Game:start_run does.
+void bo_run_start_deck(BORun *run, const char *seed, BOCenterId back, int stake);
+
+// Back:apply_to_run in the middle of a run, for the tests: the modifiers,
+// the vouchers, and the consumables of the deck. The starting params do
+// not change the run.
+void bo_run_apply_back(BORun *run, BOCenterId back);
 
 // The blind of a slot in this ante.
 BOBlindId bo_run_slot_blind(const BORun *run, BOBlindSlot slot);

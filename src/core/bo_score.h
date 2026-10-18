@@ -18,6 +18,7 @@ typedef enum {
     BO_EVENT_LEVEL_UP,  // The hand went up one level.
     BO_EVENT_SWAP,      // The chips and the mult changed places.
     BO_EVENT_DEBUFFED,  // The card is debuffed and does not score.
+    BO_EVENT_BALANCED,  // Plasma Deck: the chips and the mult are the same.
 } BOEventKind;
 
 typedef enum {

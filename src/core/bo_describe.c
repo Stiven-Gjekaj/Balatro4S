@@ -319,6 +319,27 @@ static void other_vars(const BORun *run, const BOItem *item, BOVars *v) {
             var_number(v, money < c->extra ? money : c->extra);
         }
         break;
+    case BO_SET_BACK:
+        // The loc_args of Back:generate_UI, with the config of each deck.
+        switch (item->center) {
+        case BO_B_RED: var_number(v, 1); break;
+        case BO_B_BLUE: var_number(v, 1); break;
+        case BO_B_YELLOW: var_number(v, 10); break;
+        case BO_B_GREEN: var_number(v, 2); var_number(v, 1); break;
+        case BO_B_BLACK: var_number(v, 1); var_number(v, 1); break;
+        case BO_B_MAGIC: var_text(v, center_name(BO_V_CRYSTAL_BALL)); var_text(v, center_name(BO_C_FOOL)); break;
+        case BO_B_NEBULA: var_text(v, center_name(BO_V_TELESCOPE)); var_number(v, -1); break;
+        case BO_B_ZODIAC:
+            var_text(v, center_name(BO_V_TAROT_MERCHANT));
+            var_text(v, center_name(BO_V_PLANET_MERCHANT));
+            var_text(v, center_name(BO_V_OVERSTOCK_NORM));
+            break;
+        case BO_B_PAINTED: var_number(v, 2); var_number(v, -1); break;
+        case BO_B_ANAGLYPH: var_text(v, center_name(BO_TAG_DOUBLE)); break;
+        case BO_B_PLASMA: var_number(v, 2); break;
+        default: break;
+        }
+        break;
     default: break;
     }
     (void)has;

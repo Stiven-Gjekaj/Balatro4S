@@ -116,3 +116,23 @@ BO_TEST(test_describe_writes_the_text_of_a_tag) {
     bo_luatab_free(text);
     free(run);
 }
+
+BO_TEST(test_describe_writes_the_text_of_a_deck) {
+    BOLuaValue *text = bo_luatab_parse(
+        "return { descriptions = { Back = {\n"
+        "  b_magic = { name = 'Magic Deck', text = { 'Start run with the', '#1# voucher', '2 copies of #2#' } },\n"
+        "  b_painted = { name = 'Painted Deck', text = { '+#1# hand size,', '#2# Joker slot' } } } } }");
+    bo_describe_set_text(text);
+    BOItem magic = {.center = BO_B_MAGIC};
+    BODescription d;
+    BO_EXPECT(bo_describe_item(NULL, &magic, &d));
+    BO_EQUAL(@(d.name), @"Magic Deck");
+    BO_EQUAL(@(d.lines[1]), @"Crystal Ball voucher");
+    BO_EQUAL(@(d.lines[2]), @"2 copies of The Fool");
+    BOItem painted = {.center = BO_B_PAINTED};
+    BO_EXPECT(bo_describe_item(NULL, &painted, &d));
+    BO_EQUAL(@(d.lines[0]), @"+2 hand size,");
+    BO_EQUAL(@(d.lines[1]), @"-1 Joker slot");
+    bo_describe_set_text(NULL);
+    bo_luatab_free(text);
+}

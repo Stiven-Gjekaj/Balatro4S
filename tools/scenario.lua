@@ -32,6 +32,9 @@
 --   redeem v_key          (buy a voucher in the shop, in place of a play)
 --   blind bl_key          (the blind of the round, before the play)
 --   most_played Pair      (current_round.most_played_poker_hand, for The Ox)
+--   discard 1 3           (discard cards 1 and 3 of the hand before the play)
+--   end_round             (end the round after the play)
+--   target 100            (the chips of the blind)
 --   tag tag_key           (skip a Small Blind for this tag; more lines skip
 --                          more blinds, then a shop opens, in place of a play)
 -- A card is a key of P_CARDS, then an enhancement, an edition, and a seal.
@@ -109,6 +112,7 @@ local function set_ability(card, words)
 end
 
 local plays, holds, use, pack, redeem, blind, tags = {}, {}, nil, nil, nil, nil, {}
+local discard_picks, do_end_round = nil, false
 for _, w in ipairs(lines) do
     local key = w[1]
     if key == 'ante' then G.GAME.round_resets.ante = tonumber(w[2])
@@ -150,6 +154,11 @@ for _, w in ipairs(lines) do
     elseif key == 'redeem' then redeem = w[2]
     elseif key == 'blind' then blind = w[2]
     elseif key == 'tag' then tags[#tags + 1] = w[2]
+    elseif key == 'discard' then
+        discard_picks = {}
+        for i = 2, #w do discard_picks[#discard_picks + 1] = tonumber(w[i]) end
+    elseif key == 'end_round' then do_end_round = true
+    elseif key == 'target' then G.GAME.blind.chips = tonumber(w[2])
     elseif key == 'most_played' then
         G.GAME.current_round.most_played_poker_hand = w[2]:gsub('_', ' ')
     elseif key == 'choose' or key == 'skip' then
@@ -485,6 +494,20 @@ if blind then
     G.GAME.blind:press_play()
     B.manager:run_all()
 end
+if discard_picks then
+    -- G.FUNCS.discard_cards_from_highlighted, then the draw.
+    G.STATE = G.STATES.SELECTING_HAND
+    G.CONTROLLER = {locks = {}, interrupt = {}, focused = {},
+                    save_cardarea_focus = function() end, recall_cardarea_focus = function() end}
+    Card.highlight = function(self, on) self.highlighted = on end
+    G.hand.highlighted = {}
+    for _, p in ipairs(discard_picks) do G.hand.highlighted[#G.hand.highlighted + 1] = G.hand.cards[p] end
+    G.FUNCS.discard_cards_from_highlighted(nil, false)
+    B.manager:run_all()
+    G.FUNCS.draw_from_deck_to_hand()
+    B.manager:run_all()
+    for i, c in ipairs(G.hand.cards) do c.T.x = i end
+end
 -- play_cards_from_highlighted uses one hand before the score.
 G.GAME.current_round.hands_left = G.GAME.current_round.hands_left - 1
 
@@ -522,4 +545,30 @@ if blind then
     print('cards' .. table.concat(cards))
     print('round ' .. G.GAME.current_round.hands_left .. ' ' .. G.GAME.current_round.discards_left .. ' ' ..
           G.hand.config.card_limit .. ' ' .. G.discard.config.card_count .. ' ' .. #G.discard.cards)
+end
+if do_end_round then
+    G.STATE = G.STATES.HAND_PLAYED
+    G.FILE_HANDLER = {}
+    G.save_settings = function() end
+    G.PROFILES[1].high_scores.current_streak = {amt = 0}
+    G.PROFILES[1].career_stats.c_single_hand_round_streak = 0
+    set_joker_usage = function() end
+    win_game = function() end
+    local any = setmetatable({}, {__index = function(t) return t end, __call = function(t) return t end})
+    G.hand_text_area = any
+    end_round()
+    B.manager:run_all()
+    print('end ' .. (G.STATE == G.STATES.GAME_OVER and 'lost' or 'won') .. ' ' .. G.GAME.dollars .. ' ' ..
+          #G.deck.cards .. ' ' .. (G.GAME.unused_discards or 0))
+    print('cards ' .. (G.GAME.current_round.idol_card.id or -999) .. ' ' .. G.GAME.current_round.idol_card.suit ..
+          ' ' .. (G.GAME.current_round.mail_card.id or -999) .. ' ' .. G.GAME.current_round.ancient_card.suit .. ' ' ..
+          G.GAME.current_round.castle_card.suit)
+    for _, c in ipairs(G.jokers.cards) do c:update(0) end
+    local bonus = {}
+    for _, j in ipairs(G.jokers.cards) do bonus[#bonus + 1] = ' ' .. (j:calculate_dollar_bonus() or '-') end
+    print('bonus' .. table.concat(bonus))
+    print_jokers()
+    local cons = {}
+    for _, c in ipairs(G.consumeables.cards) do cons[#cons + 1] = ' ' .. c.config.center.key end
+    print('consumables' .. table.concat(cons))
 end

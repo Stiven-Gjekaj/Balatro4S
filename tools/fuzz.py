@@ -3,12 +3,14 @@
 (tools/oracle.sh score) and with Balatro4S (build/fuzz/scenario), and
 prints each scenario where the results are not the same.
 
-Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--pack] [--voucher] [--blind] [--tag] [--keep]
+Usage: tools/fuzz.py [COUNT] [SEED] [--jokers j_a,j_b] [--use] [--pack] [--voucher] [--blind] [--tag] [--round] [--each N] [--keep]
 With --use, each scenario uses a Tarot, Planet, or Spectral card on the hand
 in place of a play. With --pack, each scenario opens a booster pack in the
 shop and takes some of its cards. With --voucher, each scenario buys a
 voucher in the shop. With --blind, each play has a random blind. With --tag,
-each scenario skips blinds for random tags, then opens a shop.
+each scenario skips blinds for random tags, then opens a shop. With --round,
+each play comes after a discard and ends the round. With --each N, each
+joker comes in N scenarios.
 """
 
 import os
@@ -38,6 +40,9 @@ BLINDS = ["bl_arm", "bl_club", "bl_eye", "bl_final_acorn", "bl_final_bell", "bl_
 # Balatro hashes strings with a new random seed in each process, so the
 # original itself gives another hand in each session. It cannot be compared.
 SKIP = {"j_todo_list"}
+
+# --each: the joker that each scenario must have.
+FORCED = []
 
 
 def all_jokers():
@@ -231,7 +236,7 @@ def scenario(rng, jokers):
     lines.append("ante %d" % rng.randint(1, 8))
     lines.append("dollars %d" % rng.randint(-5, 60))
     lines.append("hands_left %d" % rng.randint(1, 4))
-    lines.append("discards_left %d" % rng.randint(0, 4))
+    lines.append("discards_left %d" % rng.randint(1 if "--round" in sys.argv else 0, 4))
     lines.append("hands_played %d" % rng.randint(0, 3))
     lines.append("discards_used %d" % rng.randint(0, 3))
     for hand in rng.sample(HANDS, rng.randint(0, 3)):
@@ -242,7 +247,11 @@ def scenario(rng, jokers):
     lines.append("mail %d" % rng.randint(2, 14))
     lines.append("ancient " + rng.choice(SUIT_NAMES))
     lines.append("castle " + rng.choice(SUIT_NAMES))
-    for key in rng.sample(jokers, min(len(jokers), rng.randint(1, 5))):
+    chosen = rng.sample(jokers, min(len(jokers), rng.randint(1, 5)))
+    if FORCED:
+        chosen = [FORCED[0]] + [k for k in chosen if k != FORCED[0]][:rng.randint(0, 4)]
+        rng.shuffle(chosen)
+    for key in chosen:
         words = ["joker", key]
         if rng.random() < 0.2:
             words.append("edition=" + rng.choice(EDITIONS + ["negative"]))
@@ -255,6 +264,16 @@ def scenario(rng, jokers):
     if "--blind" in sys.argv:
         lines.append("blind " + rng.choice(BLINDS))
         lines.append("most_played " + rng.choice(HANDS))
+    if "--round" in sys.argv:
+        deck = [card(rng) for _ in range(rng.randint(0, 12))]
+        if deck:
+            lines.append("deck_cards " + " ".join(deck))
+        if held and rng.random() < 0.8:
+            picks = sorted(rng.sample(range(1, len(held) + 1), rng.randint(1, min(5, len(held)))))
+            lines.append("discard " + " ".join(str(p) for p in picks))
+        if rng.random() < 0.6:
+            lines.append("target %d" % rng.randint(1, 50))
+        lines.append("end_round")
     return "\n".join(lines) + "\n"
 
 
@@ -277,7 +296,13 @@ def main():
                    [os.path.join(ROOT, "src", "core", f) for f in os.listdir(os.path.join(ROOT, "src", "core"))
                     if f.endswith(".c")] + ["-lz", "-o", os.path.join(OUT, "scenario")], check=True)
     failures = 0
+    if "--each" in sys.argv:
+        per = int(sys.argv[sys.argv.index("--each") + 1])
+        order = [k for k in jokers for _ in range(per)]
+        count = len(order)
     for i in range(count):
+        if "--each" in sys.argv:
+            FORCED[:] = [order[i]]
         if "--tag" in sys.argv:
             text = tag_scenario(rng, jokers, all_tags())
         elif "--voucher" in sys.argv:

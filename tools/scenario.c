@@ -371,6 +371,8 @@ int main(int argc, char **argv) {
     int blindId = -1;
     BOCenterId tags[8];
     int tagCount = 0;
+    uint64_t discardMask = 0;
+    int hasDiscard = 0, doEndRound = 0;
     int stepCount = 0;
     uint64_t useMask = 0;
     rewind(file);
@@ -438,6 +440,14 @@ int main(int argc, char **argv) {
             for (char *c = name; *c; c++) if (*c == '_') *c = ' ';
             int type = bo_rules_hand_by_name(name);
             if (type >= 0) run->most_played_hand = (BOHandType)type;
+        } else if (strcmp(key, "discard") == 0) {
+            discardMask = 0;
+            hasDiscard = 1;
+            for (int i = 1; i < count; i++) discardMask |= (uint64_t)1 << (atoi(words[i]) - 1);
+        } else if (strcmp(key, "end_round") == 0) {
+            doEndRound = 1;
+        } else if (strcmp(key, "target") == 0) {
+            run->blind_chips = atof(words[1]);
         } else if (strcmp(key, "tag") == 0 && tagCount < 8) {
             tags[tagCount++] = bo_center_by_key(words[1]);
         } else if (strcmp(key, "redeem") == 0) {
@@ -483,6 +493,11 @@ int main(int argc, char **argv) {
         bo_boss_set_blind(run);
         bo_boss_press_play(run);
     }
+    if (hasDiscard) {
+        // The discard and the draw, as bo_run_discard does them.
+        bo_run_discard_cards(run, discardMask, 0);
+        bo_run_draw_cards(run, (run->hand_size > 0 ? run->hand_size : 0) - run->hand_count);
+    }
     run->hands_left--;
 
     BOScore score;
@@ -500,6 +515,34 @@ int main(int argc, char **argv) {
     print_jokers(run);
     printf("consumables %d\n", run->consumable_count);
     print_levels(run);
+    if (doEndRound) {
+        // A card that broke or was destroyed left G.playing_cards.
+        int kept = 0;
+        for (int i = 0; i < run->play_count; i++) {
+            if (!run->play[i].shattered && !run->play[i].destroyed) run->play[kept++] = run->play[i];
+        }
+        run->play_count = kept;
+        run->state = BO_STATE_SELECTING;
+        bo_run_end_round(run);
+        static const char *suits[4] = {"Spades", "Hearts", "Clubs", "Diamonds"};
+        printf("end %s %d %d %d\n", run->state == BO_STATE_GAME_OVER ? "lost" : "won", run->dollars, run->deck_count,
+               run->unused_discards);
+        printf("cards %d %s %d %s %s\n", run->idol_rank, suits[run->idol_suit], run->mail_rank, suits[run->ancient_suit],
+               suits[run->castle_suit]);
+        for (int i = 0; i < run->joker_count; i++) bo_joker_update(run, &run->jokers[i]);
+        printf("bonus");
+        for (int i = 0; i < run->joker_count; i++) {
+            int has = 0;
+            int dollars = bo_joker_dollar_bonus(run, &run->jokers[i], &has);
+            if (has) printf(" %d", dollars);
+            else printf(" -");
+        }
+        printf("\n");
+        print_jokers(run);
+        printf("consumables");
+        for (int i = 0; i < run->consumable_count; i++) printf(" %s", bo_center(run->consumables[i].center)->key);
+        printf("\n");
+    }
     if (blindId >= 0) {
         printf("cards");
         for (int i = 0; i < run->play_count; i++) {
